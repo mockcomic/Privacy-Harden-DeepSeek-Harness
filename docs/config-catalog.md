@@ -1590,32 +1590,32 @@ export interface Config {
 ## `@deepseek-ai/dsh-host-product-telemetry-otel`
 
 - `inject`: `otel`
-- `source`: [`packages/host/product-telemetry-otel/src/index.ts:18`](../packages/host/product-telemetry-otel/src/index.ts)
+- `source`: [`packages/host/product-telemetry-otel/src/index.ts:17`](../packages/host/product-telemetry-otel/src/index.ts)
 
 ```ts config-catalog
-/** Collector routing, application identity, and bounded in-memory batch settings. */
+/** Collector routing, application identity, and batch settings retained for existing compositions. */
 export interface Config {
-  /** Full HTTP(S) logs URL. */
-  endpoint: string
-  /** Collector routing header. */
+  /** Optional HTTP(S) logs URL. When set, it is validated and then not contacted. */
+  endpoint?: string
+  /** Collector routing header retained for composition compatibility. It is not sent. */
   channel: string
-  /** Resource service.name supplied by the application composition. */
+  /** Resource service.name supplied by the application composition. Not transmitted. */
   serviceName: string
-  /** Resource service.version supplied by the application composition. */
+  /** Resource service.version supplied by the application composition. Not transmitted. */
   serviceVersion: string
-  /** Omit to honor OTEL_EXPORTER_OTLP_LOGS_COMPRESSION / OTEL_EXPORTER_OTLP_COMPRESSION. */
+  /** Ignored compression selection. */
   compression?: 'none' | 'gzip'
-  /** Maximum records per export; must not exceed maxQueueSize. */
+  /** Ignored maximum records per export. Must not exceed maxQueueSize when both are set. */
   maxExportBatchSize: number
-  /** Maximum queued records; the SDK drops new records when full. */
+  /** Ignored maximum queued records. */
   maxQueueSize: number
-  /** Delay before exporting a partial batch. */
+  /** Ignored partial-batch delay. */
   scheduledDelayMillis: number
-  /** Exporter HTTP deadline, including SDK transient-error retries. */
+  /** Ignored HTTP deadline. */
   timeoutMillis: number
-  /** Processor deadline for one batch export. */
+  /** Ignored per-batch deadline. */
   exportTimeoutMillis: number
-  /** Drain deadline; expiry cancels pending exports before disposal completes. */
+  /** Ignored drain deadline. */
   shutdownTimeoutMillis: number
 }
 ```
@@ -2424,12 +2424,12 @@ export interface Config {
 ## `@deepseek-ai/dsh-plugin-package-inventory-deepseek`
 
 - `inject`: `agents` · `deepseekLlmApiExtensions` · `loader`
-- `source`: [`packages/llm/plugin-package-inventory-deepseek/src/index.ts:32`](../packages/llm/plugin-package-inventory-deepseek/src/index.ts)
+- `source`: [`packages/llm/plugin-package-inventory-deepseek/src/index.ts:19`](../packages/llm/plugin-package-inventory-deepseek/src/index.ts)
 
 ```ts config-catalog
-/** Plugin-package request contribution configuration. */
+/** Inventory configuration retained so existing compositions still validate. */
 export interface Config {
-  /** Contribute `dsh_plugin_packages` to official DeepSeek requests. Defaults to `true`. */
+  /** Ignored. The request field is never contributed. */
   enabled?: boolean
 }
 ```
@@ -2710,18 +2710,14 @@ export interface JsonRpcConfig {
 
 - `inject`: `deepseekLlmApiExtensions` · `sessions`
 - `refs`: `Volatile` (`@deepseek-ai/cordis`)
-- `source`: [`packages/session/session-log-deepseek/src/index.ts:39`](../packages/session/session-log-deepseek/src/index.ts)
+- `source`: [`packages/session/session-log-deepseek/src/index.ts:19`](../packages/session/session-log-deepseek/src/index.ts)
 
 ```ts config-catalog
-/** Session-log request contribution configuration. */
+/** Session-log configuration retained so existing compositions still validate. */
 export interface Config {
-  /** Contribute `dsh_session_log` to official DeepSeek requests. Defaults to `true`. */
+  /** Ignored. The request field is never contributed. */
   enabled: Volatile<boolean>
-  /**
-   * Largest serialized `dsh_session_log` field, in UTF-8 bytes, that one request carries.
-   * A request uploads the longest pending event prefix that fits; later requests continue
-   * after its acceptance. Defaults to 8 MiB.
-   */
+  /** Ignored byte ceiling retained so existing compositions validate. */
   maxBytes: number
 }
 ```
@@ -2876,40 +2872,35 @@ export interface Config {
 ## `@deepseek-ai/dsh-session-telemetry-otel`
 
 - `inject`: `sessions` · `otel`
-- `refs`: [`LogExporterOptions`](../packages/telemetry/otel/src/index.ts) · [`SessionLogProcessorOptions`](../packages/telemetry/otel/src/index.ts)
-- `source`: [`packages/session/session-telemetry-otel/src/index.ts:85`](../packages/session/session-telemetry-otel/src/index.ts)
+- `source`: [`packages/session/session-telemetry-otel/src/index.ts:63`](../packages/session/session-telemetry-otel/src/index.ts)
 
 ```ts config-catalog
 /**
- * Plugin configuration: sharing policy, SDK transport options, byte/count queue
- * settings, and an overall shutdown bound. Uploading modes validate their endpoint
- * and shutdown deadline at plugin load; `DISABLED` reads neither.
+ * Plugin configuration retained so existing compositions still load.
+ * `exporter` and `processor` are ignored. `FULL` is rejected by the schema.
  */
 export interface Config {
-  /** Defaults to `FEEDBACK_ONLY`: capture session history only when feedback is explicitly submitted. */
+  /** Defaults to `DISABLED`. `FEEDBACK_ONLY` is accepted and still does not upload. */
   mode?: SessionTelemetryMode
-  /**
-   * Explicit SDK HTTP transport settings, including optional routing headers.
-   * Ambient credentials are not inherited. URL is required while uploading.
-   * Exporter self-observability metering is not supported.
-   */
-  exporter?: Omit<LogExporterOptions, 'url'> & {
-    /** Full logs endpoint (e.g. `https://collector.example.com/v1/logs`). Required outside `DISABLED`; validated at load. */
+  /** Ignored destination and transport settings. */
+  exporter?: {
+    /** Ignored logs URL. Export does not contact it. */
     url?: string
   }
-  /**
-   * Count, queue, cadence, and per-request watchdog settings for the byte-bounded
-   * processor. A watchdog warning never releases an unsettled transport slot.
-   * SDK processor self-observability metering is not supported.
-   */
-  processor?: SessionLogProcessorOptions
-  /** Maximum time spent awaiting the SDK provider's complete shutdown path. */
+  /** Ignored queue settings. */
+  processor?: {
+    /** Ignored maximum records per batch. */
+    maxExportBatchSize?: number
+    /** Ignored delay before a partial batch. */
+    scheduledDelayMillis?: number
+  }
+  /** Ignored shutdown bound. */
   shutdownTimeoutMillis?: number
-  /** Uncompressed OTLP request byte limit, at most 4,000,000. */
+  /** Ignored request ceiling. */
   maxRequestBytes?: number
 }
 
-/** Session-sharing policy selected by {@link Config.mode}. */
+/** Session-sharing policy names still accepted from existing compositions. */
 export enum SessionTelemetryMode {
   FEEDBACK_ONLY = 'FEEDBACK_ONLY',
   DISABLED = 'DISABLED',

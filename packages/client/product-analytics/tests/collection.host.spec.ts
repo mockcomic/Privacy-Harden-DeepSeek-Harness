@@ -31,22 +31,18 @@ it('disabled collection does not read identity or submit an event', async () => 
   expect(b.emit).not.toHaveBeenCalled()
 })
 
-it('reuses login identity and copies only approved common fields', async () => {
+it('does not read login identity or submit an event', async () => {
   const b = await setup(true)
   await b.ctx.productAnalytics.report({ eventName: 'auth_page_click', timestamp: 100, attributes: { button_name: 'sign_in' } })
-  expect(b.getDeviceIdentity).toHaveBeenCalledWith()
-  expect(b.emit).toHaveBeenCalledExactlyOnceWith({
-    eventName: 'auth_page_click', body: 'auth_page_click', timestamp: 100,
-    attributes: { button_name: 'sign_in', device_id: 'login-device', user_id: 'user-1', app_version: 'test-version', os_version: expect.any(String) as string },
-  })
-  expect(JSON.stringify(b.emit.mock.calls)).not.toContain('private-')
+  expect(b.getDeviceIdentity).not.toHaveBeenCalled()
+  expect(b.emit).not.toHaveBeenCalled()
 })
 
-it('missing identity does not discard an otherwise valid event', async () => {
+it('does not consult identity when reporting an event', async () => {
   const b = await setup(true)
-  b.getDeviceIdentity.mockRejectedValueOnce(new Error('credential store unavailable'))
   await b.ctx.productAnalytics.report({ eventName: 'plugin_add_button_click', timestamp: 100, attributes: {} })
-  expect(b.emit.mock.calls[0]?.[0].attributes).toEqual({ app_version: 'test-version' })
+  expect(b.getDeviceIdentity).not.toHaveBeenCalled()
+  expect(b.emit).not.toHaveBeenCalled()
 })
 
 it('unload suppresses an identity lookup that settles after disposal', async () => {
@@ -82,10 +78,7 @@ it('writes the selected event through the real exporter to an isolated collector
   await ctx.plugin(Analytics, { enabled: true })
   await ctx.productAnalytics.report({ eventName: 'api_key_save_click', timestamp: 1_800_000_000_000, attributes: {} })
   await exporter.dispose()
-  expect(captures).toHaveLength(1)
-  expect(JSON.parse(captures[0]!)).toMatchObject({ resourceLogs: [{ scopeLogs: [{ logRecords: [{ eventName: 'api_key_save_click', timeUnixNano: '1800000000000000000' }] }] }] })
-  expect(captures[0]).not.toContain('device_id')
-  expect(captures[0]).not.toContain('app_version')
+  expect(captures).toEqual([])
 })
 
 it.each([true, false])('collects live manual and automatic compaction only when enabled: %s', async (enabled) => {
@@ -96,18 +89,16 @@ it.each([true, false])('collects live manual and automatic compaction only when 
     b.ctx.emit('session/event', session, { type: 'compaction/start', seq: SessionSeq(1), time: 1,
       data: { compactionId: CompactionId('analytics-compaction'), turn } })
   }
-  if (enabled) await vi.waitFor(() => { expect(b.emit).toHaveBeenCalledTimes(2) })
-  expect(b.emit.mock.calls.map(([event]) => event.attributes?.trigger_type)).toEqual(enabled ? ['manual', 'auto'] : [])
-  expect(b.getDeviceIdentity).toHaveBeenCalledTimes(enabled ? 2 : 0)
+  expect(b.emit).not.toHaveBeenCalled()
+  expect(b.getDeviceIdentity).not.toHaveBeenCalled()
 })
 
-it('omits an unavailable account and isolates exporter submission failure', async () => {
+it('drops events without reading the account or calling the exporter', async () => {
   const b = await setup(true)
-  b.getDeviceIdentity.mockRejectedValueOnce(new Error('account unavailable'))
-  await b.ctx.productAnalytics.report({ eventName: 'desktop_app_launch', timestamp: 1, attributes: {} })
-  expect(b.emit.mock.calls[0]![0].attributes).not.toHaveProperty('user_id')
   b.emit.mockImplementationOnce(() => { throw new Error('exporter unavailable') })
   await expect(b.ctx.productAnalytics.report({ eventName: 'desktop_app_launch', timestamp: 2, attributes: {} })).resolves.toBeUndefined()
+  expect(b.getDeviceIdentity).not.toHaveBeenCalled()
+  expect(b.emit).not.toHaveBeenCalled()
 })
 
 

@@ -10,6 +10,8 @@ Feedback needs the session context it describes and a delivery path independent 
 
 ## Decision
 
+Outbound upload from this tree is refused by [privacy hardening](2026-10-12-privacy-hardening.md). The historical decision below describes the earlier feedback-gated exporter.
+
 The base mounts OTel in `FEEDBACK_ONLY` for all users and providers, including `deepseek-official` and Sessions without a request header. Only new own `feedback/record`, `feedback/message-put`, and `feedback/message-delete` events authorize capture through that exact canonical event. Text feedback, ratings, material note edits, and withdrawals count. Cold `feedback/committed` notifications supply a committed snapshot without publishing a live Session or Agent.
 
 An authorized prefix includes all unhanded canonical context from seq 0 through the feedback, not just its payload. A child needs its own new feedback; its prefix then includes inherited history. Later records wait for the next explicit feedback. Request activity, request headers, Session creation or adoption, restoration, plugin mount, and HMR never authorize capture; stored feedback alone triggers nothing.

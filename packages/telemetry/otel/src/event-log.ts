@@ -1,94 +1,75 @@
-/** Ordinary event SDK batching over a cancellable HTTP transport. */
-import type { Attributes } from '@opentelemetry/api'
-import { addAbortListener } from 'node:events'
-import { SeverityNumber, type Logger } from '@opentelemetry/api-logs'
-import { ExportResultCode } from '@opentelemetry/core'
-import { resourceFromAttributes } from '@opentelemetry/resources'
-import { BatchLogRecordProcessor, LoggerProvider } from '@opentelemetry/sdk-logs'
-import type { BatchLogRecordProcessorOptions, LogRecordExporter } from '@opentelemetry/sdk-logs'
+/**
+ * Ordinary-event channel that accepts records and does not transmit them.
+ * @module @deepseek-ai/dsh-otel/event-log
+ */
 import type { SessionLogOptions } from './session-log.ts'
-import { createEventLogExporter } from './event-transport.ts'
 import type { LogExporterOptions } from './transport.ts'
 
-/** Scalar values accepted by the collector's Arrow attributes map. */
+/** Scalar values a caller may place in an event attribute. */
 export type OTelEventScalar = string | number | boolean
 
-/** Explicitly selected analytics fields; object values may contain scalars only. */
+/** Explicitly selected analytics fields. This channel does not send them. */
 export interface OTelEventRecord {
-  /** Product/DA-owned event name. */
+  /** Product event name. */
   eventName: string
-  /** Human-readable summary; never a prompt, response, credential, or file contents. */
+  /** Human-readable summary. */
   body: string
-  /** Event occurrence time in Unix milliseconds. Observation time is assigned on enqueue. */
+  /** Event occurrence time in Unix milliseconds. */
   timestamp: number
-  /** OTel severity; omitted values use INFO. */
-  severityNumber?: SeverityNumber
-  /** Business fields selected by the caller; no automatic device or account identity. */
+  /** Numeric severity; omitted values stay on the record and are not transmitted. */
+  severityNumber?: number
+  /** Business fields selected by the caller. */
   attributes?: Record<string, OTelEventScalar | Record<string, OTelEventScalar>>
 }
 
-/** Ordinary-event transport, resource, scope, and count-batching options. */
+/** Count-batching fields retained for existing compositions. They do not open a queue. */
+export interface EventLogProcessorOptions {
+  /** Unused maximum records per batch. */
+  maxExportBatchSize?: number
+  /** Unused maximum queued records. */
+  maxQueueSize?: number
+  /** Unused delay before a partial batch. */
+  scheduledDelayMillis?: number
+  /** Unused per-batch deadline. */
+  exportTimeoutMillis?: number
+}
+
+/** Ordinary-event options. The exporter URL is not contacted. */
 export interface EventLogOptions {
+  /** Ignored destination. */
   exporter: LogExporterOptions
-  resourceAttributes: Attributes
+  /** Ignored resource attributes. */
+  resourceAttributes: Record<string, string | number | boolean>
+  /** Ignored instrumentation scope. */
   scope: { name: string; version?: string }
-  processor: Omit<BatchLogRecordProcessorOptions, 'exporter'>
+  /** Ignored queue settings. */
+  processor: EventLogProcessorOptions
+  /** Ignored diagnostic callback. */
   onFailure: SessionLogOptions['onFailure']
 }
 
-/** One caller-owned ordinary-event queue, independent of every Session-log queue. */
+/** One caller-owned ordinary-event channel. `emit` drops the record locally. */
 export class EventLogReporter {
-  private readonly exporter: LogRecordExporter
-  private readonly provider: LoggerProvider
-  private readonly logger: Logger
-  private readonly cancellation = new AbortController()
-
-  /** @param options - explicit transport, resource, scope, queue, and diagnostic settings. */
-  constructor(options: EventLogOptions) {
-    const exporter = createEventLogExporter(options.exporter, this.cancellation.signal)
-    this.exporter = exporter
-    this.provider = new LoggerProvider({
-      resource: resourceFromAttributes(options.resourceAttributes),
-      processors: [new BatchLogRecordProcessor({
-        ...options.processor,
-        exporter: {
-          export: (records, callback) => {
-            exporter.export(records, (result) => {
-              if (result.code !== ExportResultCode.SUCCESS) options.onFailure('Product telemetry export failed', result.error)
-              callback(result)
-            })
-          },
-          forceFlush: () => exporter.forceFlush(),
-          shutdown: () => exporter.shutdown(),
-        },
-      })],
-    })
-    this.logger = this.provider.getLogger(options.scope.name, options.scope.version)
-  }
+  /**
+   * Accept channel options without creating a transport.
+   * @param _options - ignored destination, identity, and queue settings.
+   */
+  // Callers must pass the channel options; this channel does not retain them.
+  // oxlint-disable-next-line no-useless-constructor -- required options stay unused
+  constructor(_options: EventLogOptions) {}
 
   /**
-   * Enqueue caller-selected analytics fields without acknowledging delivery.
-   * @param record - the ordinary event to report.
+   * Drop one event. No queue admission and no network delivery.
+   * @param _record - the ordinary event, discarded.
    */
-  emit(record: OTelEventRecord): void {
-    const severityNumber = record.severityNumber ?? SeverityNumber.INFO
-    this.logger.emit({ ...record, observedTimestamp: Date.now(), severityNumber, severityText: SeverityNumber[severityNumber] })
-  }
+  emit(_record: OTelEventRecord): void {}
 
   /**
-   * Drain the queue and release its transport, cancelling remaining exports when the caller aborts.
-   * @param signal - optional shutdown deadline; abort discards pending exports and cancels retry waits.
-   * @returns completion of SDK shutdown and transport cleanup.
+   * Finish a channel that has nothing to drain.
+   * @param _signal - ignored cancellation signal.
+   * @returns completion immediately.
    */
-  async shutdown(signal?: AbortSignal): Promise<void> {
-    const abort = (): void => { this.cancellation.abort(signal?.reason) }
-    const listener = signal === undefined ? undefined : addAbortListener(signal, abort)
-    if (signal?.aborted) abort()
-    try { await this.provider.shutdown() }
-    finally {
-      // SDK batch shutdown can reject before it releases the exporter.
-      try { await this.exporter.shutdown() }
-      finally { listener?.[Symbol.dispose]() }
-    }
+  shutdown(_signal?: AbortSignal): Promise<void> {
+    return Promise.resolve()
   }
 }

@@ -8,6 +8,22 @@ It is built on an **everything-is-a-plugin** architecture and powered by [Cordis
 
 Documentation: [https://deepseek-harness.github.io/deepseek-harness/](https://deepseek-harness.github.io/deepseek-harness/)
 
+## Privacy hardening
+
+This checkout refuses outbound telemetry, analytics, and DeepSeek reporting in source. The coding agent, tools, plugins, sessions, and desktop shell remain. The original product can send session content, plugin inventories, and an installation id to DeepSeek-operated endpoints. Setting `DSH_TELEMETRY_DISABLED` there disables only the feedback-gated OpenTelemetry row.
+
+| Original product | This checkout |
+| --- | --- |
+| After explicit feedback, OpenTelemetry posts session events and an anonymous user id to `dsh-otel-collector.deepseeksvc.com`. | Log exporters throw `Outbound reporting is disabled` before an HTTP client exists. The base profile defaults to `DISABLED` and configures no collector URL. |
+| Desktop analytics can post interaction events to that collector and can attach `device_id` and `user_id` from a signed-in account. | Product analytics keeps each event on this machine, without reading account identity or exporting it. |
+| Official DeepSeek model requests can carry `dsh_session_log` and `dsh_plugin_packages`, including prompts and tool output. | Those packages stay loaded so existing compositions and old session events still open, and they add no request fields. Settings has no session-log upload switch. |
+| Official requests send `x-deepseek-harness-user-id`, `x-deepseek-harness-session-id`, and `x-deepseek-harness-compact`. | Those headers stay unset. Shipped profiles do not create `$DSH_HOME/.anonymous-user-id`. |
+| The `/feedback` acknowledgement can include the anonymous user id. | The acknowledgement names the session id only. |
+| Desktop polls an update feed in the background and can check a mandatory-update policy at launch. | Those automatic checks run only when `DSH_DESKTOP_UPDATES=1`. A check you start yourself can still contact the update feed. |
+| Application `fetch` can reach the collector host. | Profile startup rejects `fetch` to `dsh-otel-collector.deepseeksvc.com` before a socket opens. The error names that host only. |
+
+Local JSONL sessions, crash logs, tools, plugins, streaming, and tool calling stay. A self-hosted OpenAI-compatible server, including SGLang, is a custom provider with API protocol `openai-completions`, as described in the [providers guide](docs/user/guide/providers.md). The Windows installer from this checkout is unsigned, and Windows SmartScreen warns because it has no code-signing certificate. The reporting guard covers `globalThis.fetch` in the harness process; shell, git, package managers, MCP children, `node:http`, and Electron's updater are outside it. Send sites and merge points are in [PRIVACY_HARDENING.md](PRIVACY_HARDENING.md).
+
 ## Developer preview
 
 DeepSeek Harness is in _developer preview_ and iterating rapidly. **THERE WILL BE COMPATIBILITY-BREAKING CHANGES.**

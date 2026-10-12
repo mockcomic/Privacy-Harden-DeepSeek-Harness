@@ -20,22 +20,20 @@ Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnp
 
 ### `ctx.otel` — `OTel`
 
-Shared transport provider. Mounting creates no queue, identity, or network connection.
+Shared channel factory. Mounting creates no queue, identity, or network connection.
 
 ```ts cordis-catalog
 /**
- * Create an independent ordinary-event channel with count-based batching.
- * The injected consumer must drain it during its fiber disposal.
- * @param options - transport, scope, resource, queue, and diagnostic settings selected by the consumer.
- * @returns the caller-owned channel; no state is shared with other channels.
+ * Create an ordinary-event channel that drops records locally.
+ * @param options - ignored destination, scope, resource, and queue settings.
+ * @returns the caller-owned channel; it does not send.
  */
 createEventReporter(options: EventLogOptions): EventLogReporter
 
 /**
- * Create an independent byte-bounded Session-log channel.
- * Authorization and redaction precede reporting; the consumer owns shutdown and its outer deadline.
- * @param options - transport, scope, resource, queue, and diagnostic settings selected by the consumer.
- * @returns the caller-owned channel, preserving complete accepted events within the request byte ceiling.
+ * Create a Session-log channel that drops records locally after validating queue limits.
+ * @param options - destination, scope, resource, and queue settings. Only the limits are enforced.
+ * @returns the caller-owned channel; it does not send.
  */
 createSessionLogReporter(options: SessionLogOptions): SessionLogReporter
 ```

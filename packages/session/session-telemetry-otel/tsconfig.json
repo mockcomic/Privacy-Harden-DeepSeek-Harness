@@ -27,13 +27,7 @@
       "path": "../../feedback/message-feedback"
     },
     {
-      "path": "../../llm/llm"
-    },
-    {
       "path": "../session-telemetry"
-    },
-    {
-      "path": "../../identity/anonymous-user-id"
     },
     {
       "path": "../../telemetry/otel"

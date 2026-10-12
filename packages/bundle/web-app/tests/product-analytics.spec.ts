@@ -13,8 +13,8 @@ import { afterEach, expect, it, onTestFinished, vi } from 'vitest'
 afterEach(() => { vi.unstubAllEnvs() })
 
 it.each(['desktop', 'web'])('limits collection and its shutdown to the Desktop launch: %s', async (profile) => {
-  const received = Promise.withResolvers<undefined>()
-  const server = createServer((req) => { req.resume(); req.once('end', () => { received.resolve(undefined) }) })
+  let requests = 0
+  const server = createServer((req, res) => { requests += 1; req.resume(); res.end() })
   server.listen(0, '127.0.0.1')
   await once(server, 'listening')
   onTestFinished(async () => { const closed = once(server, 'close'); server.close(); server.closeAllConnections(); await closed })
@@ -72,11 +72,11 @@ it.each(['desktop', 'web'])('limits collection and its shutdown to the Desktop l
   }
   const emit = vi.spyOn(ctx.productTelemetry, 'emit')
   await analytics.report({ eventName: 'desktop_app_launch', timestamp: 1, attributes: {} })
-  expect(emit).toHaveBeenCalledWith(expect.objectContaining({ attributes: { app_version: 'test-version' } }))
+  expect(identity).not.toHaveBeenCalled()
+  expect(emit).not.toHaveBeenCalled()
   lifetime.abort()
   await policy.return?.()
   ctx.productTelemetry.emit({ eventName: 'desktop_upgrade_install_restart_click', body: 'upgrade', timestamp: Date.now() })
-  const disposal = entry.fiber!.dispose()
-  await received.promise
-  await disposal
+  await entry.fiber!.dispose()
+  expect(requests).toBe(0)
 })

@@ -9,9 +9,6 @@
   ],
   "references": [
     {
-      "path": "../../boot/app-boot"
-    },
-    {
       "path": "../../../vendor/cosmokit"
     },
     {
@@ -19,18 +16,6 @@
     },
     {
       "path": "../../../vendor/schemastery"
-    },
-    {
-      "path": "../../../vendor/loader"
-    },
-    {
-      "path": "../../core/agent"
-    },
-    {
-      "path": "../../core/session"
-    },
-    {
-      "path": "../../preset/agent-preset-registry"
     },
     {
       "path": "../deepseek-llm-api-extensions"

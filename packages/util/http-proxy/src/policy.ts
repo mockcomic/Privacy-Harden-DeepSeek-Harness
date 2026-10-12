@@ -78,6 +78,31 @@ export interface ProxyPolicy {
 /** A policy that proxies nothing. Callers that have not installed a policy resolve URLs against this. */
 export const DIRECT_POLICY: ProxyPolicy = { noProxy: '', source: 'none' }
 
+/** Collector host that must not receive harness reporting traffic. */
+export const DENIED_REPORTING_HOST = 'dsh-otel-collector.deepseeksvc.com'
+
+/**
+ * Whether a request URL is the denied reporting collector.
+ * @param url - the outbound request URL. Only the hostname is considered.
+ * @returns true when the host is the reporting collector.
+ */
+export function deniedReportingHost(url: URL): boolean {
+  return url.hostname.replace(/\.$/, '').toLowerCase() === DENIED_REPORTING_HOST
+}
+
+/**
+ * Error raised before a reporting connection is opened. The message names the host only.
+ */
+export class OutboundReportingDeniedError extends Error {
+  /**
+   * @param host - the blocked hostname, without a path, query, or userinfo.
+   */
+  constructor(host: string) {
+    super(`Blocked outbound reporting connection to ${host}`)
+    this.name = 'OutboundReportingDeniedError'
+  }
+}
+
 /** Why one candidate proxy value was not used. Callers decide whether this warns or fails the load. */
 export interface ProxyDiagnostic {
   /** `socks` for a SOCKS or PAC URL this package cannot route; `invalid` for anything unparseable. */

@@ -1592,20 +1592,20 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
   },
   {
     key: 'otel',
-    summary: 'Shared transport provider.',
-    description: 'Shared transport provider. Mounting creates no queue, identity, or network connection.',
+    summary: 'Shared channel factory.',
+    description: 'Shared channel factory. Mounting creates no queue, identity, or network connection.',
     methods: [
       {
         signature: 'createEventReporter(options: EventLogOptions): EventLogReporter',
-        description: 'Create an independent ordinary-event channel with count-based batching. The injected consumer must drain it during its fiber disposal.',
-        parameters: [{ name: 'options', description: 'transport, scope, resource, queue, and diagnostic settings selected by the consumer.' }],
-        returns: 'the caller-owned channel; no state is shared with other channels.',
+        description: 'Create an ordinary-event channel that drops records locally.',
+        parameters: [{ name: 'options', description: 'ignored destination, scope, resource, and queue settings.' }],
+        returns: 'the caller-owned channel; it does not send.',
       },
       {
         signature: 'createSessionLogReporter(options: SessionLogOptions): SessionLogReporter',
-        description: 'Create an independent byte-bounded Session-log channel. Authorization and redaction precede reporting; the consumer owns shutdown and its outer deadline.',
-        parameters: [{ name: 'options', description: 'transport, scope, resource, queue, and diagnostic settings selected by the consumer.' }],
-        returns: 'the caller-owned channel, preserving complete accepted events within the request byte ceiling.',
+        description: 'Create a Session-log channel that drops records locally after validating queue limits.',
+        parameters: [{ name: 'options', description: 'destination, scope, resource, and queue settings. Only the limits are enforced.' }],
+        returns: 'the caller-owned channel; it does not send.',
       },
     ],
   },
@@ -1783,22 +1783,22 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'current policy values until cancellation or service disposal.',
       },
       {
-        signature: '@Remote async report(event: ProductEvent): Promise<void>',
-        description: 'Submit selected Desktop fields; missing identity is omitted and never generated.',
-        parameters: [{ name: 'event', description: 'typed product event without message contents or credentials.' }],
-        returns: 'after local submission; no delivery or warehouse acknowledgement.',
+        signature: '@Remote async report(_event: ProductEvent): Promise<void>',
+        description: 'Drop a Desktop analytics event. Identity is not read and nothing is exported.',
+        parameters: [{ name: '_event', description: 'typed product event, discarded locally.' }],
+        returns: 'immediately, without a delivery acknowledgement.',
       },
     ],
   },
   {
     key: 'productTelemetry',
-    summary: 'Host analytics sender.',
-    description: 'Host analytics sender. Mounting alone sends nothing; the owning fiber drains it on unload.',
+    summary: 'Host analytics receiver.',
+    description: 'Host analytics receiver. Mounting and `emit` send nothing.',
     methods: [
       {
-        signature: 'emit(record: ProductTelemetryRecord): void',
-        description: 'Enqueue one selected product event without waiting for network delivery. Queue admission and shutdown completion are not collector or warehouse acknowledgements.',
-        parameters: [{ name: 'record', description: 'caller-owned event containing only approved analytics fields.' }],
+        signature: 'emit(_record: ProductTelemetryRecord): void',
+        description: 'Drop one selected product event. No exporter is constructed.',
+        parameters: [{ name: '_record', description: 'caller-owned event, discarded locally.' }],
       },
     ],
   },
@@ -5335,11 +5335,15 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'EventLogOptions',
-    declaration: 'export interface EventLogOptions {\n    exporter: LogExporterOptions;\n    resourceAttributes: Attributes;\n    scope: {\n        name: string;\n        version?: string;\n    };\n    processor: Omit<BatchLogRecordProcessorOptions, \'exporter\'>;\n    onFailure: SessionLogOptions[\'onFailure\'];\n}',
+    declaration: 'export interface EventLogOptions {\n    exporter: LogExporterOptions;\n    resourceAttributes: Record<string, string | number | boolean>;\n    scope: {\n        name: string;\n        version?: string;\n    };\n    processor: EventLogProcessorOptions;\n    onFailure: SessionLogOptions[\'onFailure\'];\n}',
+  },
+  {
+    name: 'EventLogProcessorOptions',
+    declaration: 'export interface EventLogProcessorOptions {\n    maxExportBatchSize?: number;\n    maxQueueSize?: number;\n    scheduledDelayMillis?: number;\n    exportTimeoutMillis?: number;\n}',
   },
   {
     name: 'EventLogReporter',
-    declaration: 'export class EventLogReporter {\n    constructor(options: EventLogOptions);\n    emit(record: OTelEventRecord): void;\n    async shutdown(signal?: AbortSignal): Promise<void>;\n}',
+    declaration: 'export class EventLogReporter {\n    constructor(_options: EventLogOptions);\n    emit(_record: OTelEventRecord): void;\n    shutdown(_signal?: AbortSignal): Promise<void>;\n}',
   },
   {
     name: 'EveryScheduleRecord',
@@ -5847,7 +5851,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'LogExporterOptions',
-    declaration: 'export type LogExporterOptions = Omit<OTLPExporterNodeConfigBase, \'selfObsMeterProvider\'> & {\n    url: string;\n};',
+    declaration: 'export interface LogExporterOptions {\n    url: string;\n}',
   },
   {
     name: 'LspHover',
@@ -6119,7 +6123,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'OTelEventRecord',
-    declaration: 'export interface OTelEventRecord {\n    eventName: string;\n    body: string;\n    timestamp: number;\n    severityNumber?: SeverityNumber;\n    attributes?: Record<string, OTelEventScalar | Record<string, OTelEventScalar>>;\n}',
+    declaration: 'export interface OTelEventRecord {\n    eventName: string;\n    body: string;\n    timestamp: number;\n    severityNumber?: number;\n    attributes?: Record<string, OTelEventScalar | Record<string, OTelEventScalar>>;\n}',
   },
   {
     name: 'OTelEventScalar',
@@ -6947,19 +6951,19 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SessionLogOptions',
-    declaration: 'export interface SessionLogOptions {\n    exporter: LogExporterOptions;\n    processor?: SessionLogProcessorOptions;\n    maxRequestBytes?: number;\n    scope: {\n        name: string;\n        version?: string;\n    };\n    resourceAttributes: Attributes;\n    onFailure: (message: string, error?: Error) => void;\n}',
+    declaration: 'export interface SessionLogOptions {\n    exporter: LogExporterOptions;\n    processor?: SessionLogProcessorOptions;\n    maxRequestBytes?: number;\n    scope: {\n        name: string;\n        version?: string;\n    };\n    resourceAttributes: Record<string, string | number | boolean>;\n    onFailure: (message: string, error?: Error) => void;\n}',
   },
   {
     name: 'SessionLogProcessorOptions',
-    declaration: 'export type SessionLogProcessorOptions = Omit<BatchLogRecordProcessorOptions, \'exporter\' | \'selfObsMeterProvider\'>;',
+    declaration: 'export interface SessionLogProcessorOptions {\n    maxQueueSize?: number;\n    maxExportBatchSize?: number;\n    scheduledDelayMillis?: number;\n    exportTimeoutMillis?: number;\n}',
   },
   {
     name: 'SessionLogRecord',
-    declaration: 'export interface SessionLogRecord {\n    sessionId: SessionId;\n    event: Omit<SessionEvent, \'data\'> & {\n        data: unknown;\n    };\n    attributes?: Attributes;\n    severityNumber?: SeverityNumber;\n}',
+    declaration: 'export interface SessionLogRecord {\n    sessionId: SessionId;\n    event: Omit<SessionEvent, \'data\'> & {\n        data: unknown;\n    };\n    attributes?: Record<string, unknown>;\n    severityNumber?: number;\n}',
   },
   {
     name: 'SessionLogReporter',
-    declaration: 'export class SessionLogReporter {\n    constructor(options: SessionLogOptions);\n    reportSessionLog(record: SessionLogRecord): void;\n    stopPending(): void;\n    shutdown(): Promise<void>;\n}',
+    declaration: 'export class SessionLogReporter {\n    constructor(options: SessionLogOptions);\n    reportSessionLog(_record: SessionLogRecord): void;\n    stopPending(): void;\n    shutdown(): Promise<void>;\n}',
   },
   {
     name: 'SessionLogSnapshot',

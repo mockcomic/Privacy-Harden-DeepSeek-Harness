@@ -1,50 +1,49 @@
-/** Product analytics policy adapter for the shared Cordis OTel service. */
+/** Product analytics service that accepts events and does not export them. */
+import { validateHeaderValue } from 'node:http'
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { validateHeaderValue } from 'node:http'
-import { CompressionAlgorithm } from '@opentelemetry/otlp-exporter-base'
-import type { EventLogReporter, OTelEventRecord, OTelEventScalar } from '@deepseek-ai/dsh-otel'
+import type { OTelEventRecord, OTelEventScalar } from '@deepseek-ai/dsh-otel'
 
 declare module '@deepseek-ai/cordis' {
   interface Context { productTelemetry: ProductTelemetry }
 }
 
-/** Caller-selected ordinary analytics record. */
+/** Caller-selected ordinary analytics record. `emit` drops it locally. */
 export type ProductTelemetryRecord = OTelEventRecord
 /** Scalar values accepted in product attributes. */
 export type ProductTelemetryScalar = OTelEventScalar
 
-/** Collector routing, application identity, and bounded in-memory batch settings. */
+/** Collector routing, application identity, and batch settings retained for existing compositions. */
 export interface Config {
-  /** Full HTTP(S) logs URL. */
-  endpoint: string
-  /** Collector routing header. */
+  /** Optional HTTP(S) logs URL. When set, it is validated and then not contacted. */
+  endpoint?: string
+  /** Collector routing header retained for composition compatibility. It is not sent. */
   channel: string
-  /** Resource service.name supplied by the application composition. */
+  /** Resource service.name supplied by the application composition. Not transmitted. */
   serviceName: string
-  /** Resource service.version supplied by the application composition. */
+  /** Resource service.version supplied by the application composition. Not transmitted. */
   serviceVersion: string
-  /** Omit to honor OTEL_EXPORTER_OTLP_LOGS_COMPRESSION / OTEL_EXPORTER_OTLP_COMPRESSION. */
+  /** Ignored compression selection. */
   compression?: 'none' | 'gzip'
-  /** Maximum records per export; must not exceed maxQueueSize. */
+  /** Ignored maximum records per export. Must not exceed maxQueueSize when both are set. */
   maxExportBatchSize: number
-  /** Maximum queued records; the SDK drops new records when full. */
+  /** Ignored maximum queued records. */
   maxQueueSize: number
-  /** Delay before exporting a partial batch. */
+  /** Ignored partial-batch delay. */
   scheduledDelayMillis: number
-  /** Exporter HTTP deadline, including SDK transient-error retries. */
+  /** Ignored HTTP deadline. */
   timeoutMillis: number
-  /** Processor deadline for one batch export. */
+  /** Ignored per-batch deadline. */
   exportTimeoutMillis: number
-  /** Drain deadline; expiry cancels pending exports before disposal completes. */
+  /** Ignored drain deadline. */
   shutdownTimeoutMillis: number
 }
 
 const positiveInteger = () => z.number().step(1).min(1).max(2_147_483_647)
 
-/** Loader validation and defaults for application compositions. */
+/** Loader validation. There is no default collector URL. */
 export const Config: z<Partial<Config>, Config> = z.object({
-  endpoint: z.string().default('https://dsh-otel-collector.deepseeksvc.com/v1/logs'),
+  endpoint: z.string(),
   channel: z.string().min(1).default('dsh_otel_report'),
   serviceName: z.string().required(),
   serviceVersion: z.string().required(),
@@ -57,65 +56,37 @@ export const Config: z<Partial<Config>, Config> = z.object({
   shutdownTimeoutMillis: positiveInteger().default(21000),
 })
 
-/** Host analytics sender. Mounting alone sends nothing; the owning fiber drains it on unload. */
+/** Host analytics receiver. Mounting and `emit` send nothing. */
 export default class ProductTelemetry extends Service {
   static inject = ['otel']
   static Config = Config
-  private readonly reporter: EventLogReporter
 
   constructor(ctx: Context, config: Config) {
-    let endpoint: URL
-    try {
-      endpoint = new URL(config.endpoint)
-    } catch (cause) {
-      throw new Error('product-telemetry-otel: endpoint must be a valid HTTP(S) URL', { cause })
+    if (config.endpoint !== undefined) {
+      let endpoint: URL
+      try {
+        endpoint = new URL(config.endpoint)
+      } catch (cause) {
+        throw new Error('product-telemetry-otel: endpoint must be a valid HTTP(S) URL', { cause })
+      }
+      if (!['http:', 'https:'].includes(endpoint.protocol)) {
+        throw new Error('product-telemetry-otel: endpoint must use HTTP or HTTPS')
+      }
     }
     try {
       validateHeaderValue('x-channel', config.channel)
     } catch (cause) {
       throw new Error('product-telemetry-otel: channel must be a valid HTTP header value', { cause })
     }
-    if (!['http:', 'https:'].includes(endpoint.protocol)) {
-      throw new Error('product-telemetry-otel: endpoint must use HTTP or HTTPS')
-    }
     if (config.maxExportBatchSize > config.maxQueueSize) {
       throw new Error('product-telemetry-otel: maxExportBatchSize must not exceed maxQueueSize')
     }
     super(ctx, 'productTelemetry')
-    const reporter = ctx.otel.createEventReporter({
-      exporter: {
-        url: config.endpoint, headers: { 'x-channel': config.channel }, timeoutMillis: config.timeoutMillis,
-        ...(config.compression === undefined ? {} : { compression: config.compression === 'gzip' ? CompressionAlgorithm.GZIP : CompressionAlgorithm.NONE }),
-      },
-      resourceAttributes: { 'service.name': config.serviceName, 'service.version': config.serviceVersion },
-      scope: { name: '@deepseek-ai/dsh-host-product-telemetry-otel' },
-      processor: {
-        maxExportBatchSize: config.maxExportBatchSize, maxQueueSize: config.maxQueueSize,
-        scheduledDelayMillis: config.scheduledDelayMillis, exportTimeoutMillis: config.exportTimeoutMillis,
-      },
-      onFailure: (message, error) => { ctx.logger.warn(message, error) },
-    })
-    this.reporter = reporter
-    ctx.effect(() => async () => {
-      const cancellation = new AbortController()
-      const timer = setTimeout(() => {
-        ctx.logger.warn('Product telemetry shutdown deadline exceeded; pending events may be lost')
-        cancellation.abort(new Error('Product telemetry shutdown deadline exceeded'))
-      }, config.shutdownTimeoutMillis)
-      try {
-        await reporter.shutdown(cancellation.signal)
-      } finally {
-        clearTimeout(timer)
-      }
-    })
   }
 
   /**
-   * Enqueue one selected product event without waiting for network delivery.
-   * Queue admission and shutdown completion are not collector or warehouse acknowledgements.
-   * @param record - caller-owned event containing only approved analytics fields.
+   * Drop one selected product event. No exporter is constructed.
+   * @param _record - caller-owned event, discarded locally.
    */
-  emit(record: ProductTelemetryRecord): void {
-    this.reporter.emit(record)
-  }
+  emit(_record: ProductTelemetryRecord): void {}
 }

@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for 2026-10-12-privacy-hardening.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-10-12-privacy-hardening.md
+/agent-note-privacy-hardened-outbound-reporting:
+  en: fe5caaf78affeae5
+  zh: bc0b5fcb6deaf848
+/agent-note-privacy-hardened-outbound-reporting/problem:
+  en: 18dd895557dc01c7
+  zh: 943ce45300f0b94f
+/agent-note-privacy-hardened-outbound-reporting/decision:
+  en: 8041966226051cb9
+  zh: dc2239081de3d894
+/agent-note-privacy-hardened-outbound-reporting/alternatives-considered:
+  en: cd2c2a4d27f2279f
+  zh: b310417b5ba497b4
+/agent-note-privacy-hardened-outbound-reporting/consequences:
+  en: 7b29498897d3bd67
+  zh: 3156e15cd8d3e934

@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-挂载一个 `otel` 服务即可创建普通事件和 Session 日志上报通道。每个通道拥有独立的 exporter、resource、instrumentation scope 和队列。仅挂载不会创建传输、身份或发送数据。业务调用方负责授权、脱敏、字段选择及通道销毁。
+挂载一个 `otel` 服务即可创建在本地丢弃记录的普通事件通道和 Session 日志通道。`createLogExporter` 与 `createEventLogExporter` 会在创建任何 HTTP 客户端之前抛出。见 [PRIVACY_HARDENING.md](../../../PRIVACY_HARDENING.md)。
 
 ## 目录
 

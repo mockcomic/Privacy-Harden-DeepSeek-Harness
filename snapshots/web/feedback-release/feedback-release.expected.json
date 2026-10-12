@@ -1,6 +1,4 @@
 {
-  "mode": "FEEDBACK_ONLY",
-  "eventName": "session-log",
   "feedback": [
     {
       "type": "feedback/record",

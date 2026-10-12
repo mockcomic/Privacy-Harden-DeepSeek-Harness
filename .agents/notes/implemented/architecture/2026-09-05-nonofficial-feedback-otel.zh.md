@@ -10,6 +10,8 @@ Status: implemented
 
 ## 决策
 
+本树中的对外上传由 [隐私加固](2026-10-12-privacy-hardening.zh.md) 拒绝。下面的历史决定描述更早的反馈门控导出器。
+
 基础配置为所有用户和提供方以 `FEEDBACK_ONLY` 挂载 OTel，包括 `deepseek-official` 和没有请求头的 Session。只有新的自身 `feedback/record`、`feedback/message-put` 和 `feedback/message-delete` 事件授权捕获，且截止该确切的权威事件。文本反馈、评分、实质备注编辑与撤回均算作反馈。冷会话 `feedback/committed` 通知提供已提交快照，不发布存活 Session 或 Agent。
 
 授权前缀包含从 seq 0 到该反馈的所有尚未交接的权威上下文，而非只有反馈载荷。子会话需要新的自身反馈；之后其前缀包含继承历史。后续记录等待下一次显式反馈。请求活动、请求头、Session 创建或接纳、恢复、插件挂载和 HMR（热模块替换）绝不授权捕获；仅有存储的反馈不会触发任何上传。

@@ -27,10 +27,7 @@
   ],
   "license": "MIT",
   "dependencies": {
-    "@deepseek-ai/schemastery": "workspace:~",
-    "@opentelemetry/api-logs": "^0.222.0",
-    "@opentelemetry/otlp-exporter-base": "^0.222.0",
-    "@opentelemetry/sdk-logs": "^0.222.0"
+    "@deepseek-ai/schemastery": "workspace:~"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:~",

@@ -4,6 +4,11 @@ import { resolveDurationMs } from './duration-env.ts'
 import type { DesktopUpdateCoordinator } from './update-coordinator.ts'
 import type { DesktopUpdateState } from './ipc.ts'
 
+/** Background update and mandatory-policy checks run only when this variable is exactly `1`. */
+export function desktopBackgroundUpdatesEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.DSH_DESKTOP_UPDATES === '1'
+}
+
 /** Validated polling delays; maxBackoffMs caps the final randomized delay. */
 export interface DesktopUpdateScheduleConfig {
   readonly intervalMs: number

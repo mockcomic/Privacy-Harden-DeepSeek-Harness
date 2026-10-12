@@ -24,7 +24,7 @@ Contributors can link Issues as context without coupling pull-request validation
 <a id="pull-request-policy"></a>
 ## Pull-request policy
 
-[Issue policy](../workflows/issue-policy.yml) applies to non-draft, human-authored PRs with a requested review or submitted review. Exempt PRs finish successfully without resolving Issue references, minting a Project App token, or querying ProjectV2. Eligibility uses live repository state before expensive reads; the required job remains present for subscribed events. Final validation re-reads live state: preflight is not a cached verdict or an exemption for metadata edits.
+Issue policy applies to non-draft, human-authored PRs with a requested review or submitted review. Exempt PRs finish successfully without resolving Issue references, minting a Project App token, or querying ProjectV2. Eligibility uses live repository state before expensive reads; the required job remains present for subscribed events. Final validation re-reads live state: preflight is not a cached verdict or an exemption for metadata edits.
 
 Selective preflight requires [selective-preflight.json](selective-preflight.json) in the trusted checkout. Without that marker, the workflow preserves legacy behavior: human PRs receive a Project token and full legacy validation; Bot/App PRs skip both. A failed supported preflight fails the job rather than falling back.
 
@@ -41,9 +41,9 @@ REST reads use the repository `GITHUB_TOKEN`. Project validation uses a separate
 <a id="lifecycle-events"></a>
 ## Lifecycle events
 
-[Issue lifecycle](../workflows/issue-lifecycle.yml) mutates Project data independently of PR validation eligibility. PR opened/reopened events and body edits can advance resolving Issues to `In progress`; title-only edits do not. Review requests target `In review`. Changes-requested reviews target `In progress`, with the [human-ownership and terminal-status protections](../../.agents/notes/implemented/process/2026-08-10-event-directed-pr-review-status.md).
+Issue lifecycle mutates Project data independently of PR validation eligibility. PR opened/reopened events and body edits can advance resolving Issues to `In progress`; title-only edits do not. Review requests target `In review`. Changes-requested reviews target `In progress`, with the [human-ownership and terminal-status protections](../../.agents/notes/implemented/process/2026-08-10-event-directed-pr-review-status.md).
 
-Approval-only and comment-only reviews do not allocate a lifecycle runner. PR pushes and label changes, and Issue assignment changes, do not trigger lifecycle work. Other subscribed Issue events maintain membership, state, and audit comments; exact subscriptions live in the workflow.
+Approval-only and comment-only reviews do not allocate a lifecycle runner. PR pushes and label changes, and Issue assignment changes, do not trigger lifecycle work. Other subscribed Issue events maintain membership, state, and audit comments; exact subscriptions live in `lifecycle.mjs`.
 
 PR opening initializes an empty Project `Start Date` for every referenced Issue, including informational references, using the PR creation date in the configured time zone. This lifecycle operation can add Project membership and needs Project write access; the informational-reference read exemption applies only to PR validation. Existing Start Date values are preserved.
 
@@ -85,7 +85,7 @@ The focused, keyless policy suite runs from the repository root:
 node --test .github/issue-management/policy.test.mjs
 ```
 
-[Workflow tests](../../scripts/ci-workflow.spec.ts) verify trigger and permission declarations. Local tests do not establish live GitHub delivery, App installation access, or actual runner cost; repository maintainers verify those in Actions.
+Local tests do not establish live GitHub delivery, App installation access, or Project token issuance.
 
 -----
 

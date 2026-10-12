@@ -326,15 +326,7 @@ const archive = async (): Promise<Uint8Array> =>
       },
     }, {})
 
-    if (prepare === undefined) throw new Error('packed plugin inventory did not register its request contribution')
-    const prepared = await prepare({ body: {}, signal: new AbortController().signal })
-    const manifest = JSON.parse(vfs.readFileSync(
-      `${DEFAULT_ROOT}/node_modules/${PLUGIN_INVENTORY}/package.json`, 'utf8',
-    ) as string) as { version: string }
-    expect(prepared.value).toEqual({
-      version: 1,
-      packages: [{ name: PLUGIN_INVENTORY, version: manifest.version }],
-    })
+    expect(prepare).toBeUndefined()
   })
 
   it('refuses a body the packer did not lower, naming the image', async () => {

@@ -25,13 +25,6 @@ const ACK_EXPANDED_EXPECTED = join(SNAPSHOT_DIR, 'ack-expanded.expected.md')
 const RELEASE_EXPECTED = join(SNAPSHOT_DIR, 'feedback-release.expected.json')
 const MODE = webSnapshotMode()
 
-interface OtlpCapture {
-  resourceLogs: { scopeLogs: { logRecords: {
-    eventName: string
-    attributes: { key: string; value: { stringValue?: string; intValue?: number | string } }[]
-  }[] }[] }[]
-}
-
 const PROMPT = 'Reply with the single word LIGHTHOUSE and stop.'
 
 describe.each(MODE === 'record' ? ['deepseek-official'] : ['deepseek-official', 'feedback-mock'])('web e2e: feedback release for %s', (provider) => {
@@ -48,21 +41,6 @@ describe.each(MODE === 'record' ? ['deepseek-official'] : ['deepseek-official', 
   const uploads: string[] = []
   let headerlessExpected: [string, number, string][] = []
 
-  function captured(): [string | undefined, number, string | undefined][] {
-    return uploads.flatMap((upload) => {
-      const capture = JSON.parse(upload) as OtlpCapture
-      return capture.resourceLogs.flatMap(resource => resource.scopeLogs.flatMap(scope =>
-        scope.logRecords.map((record) => {
-          const attribute = (key: string) => record.attributes.find(value => value.key === key)?.value
-          expect(record.eventName).toBe('session-log')
-          const content = attribute('content')?.stringValue
-          expect(typeof content).toBe('string')
-          const event = JSON.parse(content!) as SessionEvent
-          return [attribute('sessionId')?.stringValue, event.seq, event.type] as [string | undefined, number, string | undefined]
-        })))
-    })
-  }
-
   async function expectFeedbackRelease(type: SessionEvent['type'], count: number): Promise<void> {
     const agent = scaffold.ctx.agents.get(sessionId)
     if (agent === undefined) throw new Error('feedback session has no active agent')
@@ -72,13 +50,7 @@ describe.each(MODE === 'record' ? ['deepseek-official'] : ['deepseek-official', 
     expect(feedback).toHaveLength(count)
     const boundary = feedback.at(-1)!
     authorized = events.filter(event => event.seq <= boundary.seq)
-    const expected = authorized.map(event => [sessionId, event.seq, event.type])
-    // No teardown, flush hook, or subsequent interaction may cause this delivery.
-    await expect.poll(captured, { timeout: 10_000 }).toEqual(expected)
-    const uploadedEvents = uploads.flatMap(upload => (JSON.parse(upload) as OtlpCapture).resourceLogs
-      .flatMap(resource => resource.scopeLogs.flatMap(scope => scope.logRecords))
-      .map(record => JSON.parse(record.attributes.find(attribute => attribute.key === 'content')!.value.stringValue!) as SessionEvent))
-    expect(uploadedEvents).toEqual(authorized)
+    expect(uploads).toEqual([])
     suffixes.push(authorized.slice(releasedCount).map(event => event.type))
     releasedCount = authorized.length
     expect(scaffold.ctx.agents.get(sessionId)).toBe(agent)
@@ -140,7 +112,7 @@ describe.each(MODE === 'record' ? ['deepseek-official'] : ['deepseek-official', 
       await browser?.close()
       await scaffold?.close()
       // Shutdown drains any illicitly queued tail too; delivery assertions run in the tests.
-      expect(captured()).toEqual([...authorized.map(event => [sessionId, event.seq, event.type]), ...headerlessExpected])
+      expect(uploads).toEqual([])
     } finally {
       if (collector?.listening) {
         await new Promise<void>((resolve, reject) => {
@@ -188,7 +160,7 @@ describe.each(MODE === 'record' ? ['deepseek-official'] : ['deepseek-official', 
     await input.press('Enter')
 
     await page.getByText(/Feedback recorded for session/).waitFor({ timeout: 10_000 })
-    expect(await page.getByText(/Anonymous user: [0-9a-f-]+\.$/i).count()).toBe(1)
+    expect(await page.getByText(/Anonymous user:/i).count()).toBe(0)
     await expectFeedbackRelease('feedback/record', 1)
 
     const snapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
@@ -213,7 +185,7 @@ describe.each(MODE === 'record' ? ['deepseek-official'] : ['deepseek-official', 
     await page.reload({ waitUntil: 'load' })
     acknowledgeReloadConnectionLoss(tripwire, warningStart)
     await page.getByText('LIGHTHOUSE', { exact: true }).waitFor({ timeout: 15_000 })
-    expect(captured()).toHaveLength(releasedCount)
+    expect(uploads).toEqual([])
   })
 
   it.skipIf(MODE === 'record')('persists text, ratings, notes, and retractions in the canonical session', async () => {
@@ -229,7 +201,7 @@ describe.each(MODE === 'record' ? ['deepseek-official'] : ['deepseek-official', 
     const dialog = page.getByRole('dialog', { name: 'Submit feedback' })
     await dialog.getByRole('button', { name: 'Instruction understanding and following', exact: true }).click()
     await dialog.getByRole('textbox', { name: 'Feedback details' }).fill('Clear and complete.')
-    expect(captured()).toHaveLength(releasedCount)
+    expect(uploads).toEqual([])
     await dialog.getByRole('button', { name: 'Submit', exact: true }).click()
     await expect.poll(() => dialog.count()).toBe(0)
     const rated = page.getByRole('button', { name: 'Remove rating' })
@@ -239,7 +211,7 @@ describe.each(MODE === 'record' ? ['deepseek-official'] : ['deepseek-official', 
     await page.getByRole('button', { name: 'Bad response' }).click()
     await dialog.getByRole('button', { name: 'Task result', exact: true }).click()
     await dialog.getByRole('textbox', { name: 'Feedback details' }).fill('Read both files before answering.')
-    expect(captured()).toHaveLength(releasedCount)
+    expect(uploads).toEqual([])
     await dialog.getByRole('button', { name: 'Submit', exact: true }).click()
     await expect.poll(() => dialog.count()).toBe(0)
     await expectFeedbackRelease('feedback/message-put', 2)
@@ -261,10 +233,7 @@ describe.each(MODE === 'record' ? ['deepseek-official'] : ['deepseek-official', 
     expect(events.filter(event => event.type === 'feedback/message-delete')).toMatchObject([{ data: { sessionId } }])
     expect(events.filter(event => event.type === 'turn/end')).toHaveLength(1)
     expect(agent.session.requestHeader()?.config.provider).toBe(provider)
-    expect(captured()).toHaveLength(releasedCount)
-    const wire = uploads.join('\n')
-    for (const text of ['the diff view is unreadable', 'the second remark',
-      'Clear and complete.', 'Read both files before answering.']) expect(wire).toContain(text)
+    expect(uploads).toEqual([])
     const feedback = events.flatMap<Record<string, string | undefined>>((event) => {
       switch (event.type) {
         case 'feedback/record': return [{ type: event.type, text: event.data.text }]
@@ -275,11 +244,9 @@ describe.each(MODE === 'record' ? ['deepseek-official'] : ['deepseek-official', 
         default: return []
       }
     })
+    expect(uploads).toEqual([])
     await compareOrRefreshGolden(RELEASE_EXPECTED, JSON.stringify({
-      mode: 'FEEDBACK_ONLY',
-      eventName: (JSON.parse(uploads[0]!) as OtlpCapture).resourceLogs[0]!.scopeLogs[0]!.logRecords[0]!.eventName,
       feedback,
-      // The prefix is compared with each provider's actual canonical log above.
       laterSubmissionSuffixes: suffixes.slice(1),
     }, null, 2), MODE)
   }, 60_000)
@@ -287,12 +254,12 @@ describe.each(MODE === 'record' ? ['deepseek-official'] : ['deepseek-official', 
   it.skipIf(MODE === 'record')('releases headerless feedback without capturing another session’s provider-change tail', async () => {
     await selectModel('Feedback mock')
     await selectModel('DeepSeek-V4-Flash')
-    expect(captured()).toHaveLength(releasedCount)
+    expect(uploads).toEqual([])
     await page.getByRole('button', { name: 'New session', exact: true }).last().click()
     const input = page.locator('[data-composer-input][contenteditable="true"][data-placeholder="Describe what you want to build, / commands, @ files or sessions"]')
     await input.waitFor({ timeout: 15_000 })
     await input.fill('/feedback Feedback before any model request.')
-    expect(captured()).toHaveLength(releasedCount)
+    expect(uploads).toEqual([])
     await input.press('Enter')
     const findHeaderless = () => scaffold.ctx.sessions.list().find(session => session.id !== sessionId
       && session.snapshotEvents().some(event => event.type === 'feedback/record'))
@@ -306,10 +273,8 @@ describe.each(MODE === 'record' ? ['deepseek-official'] : ['deepseek-official', 
     const feedback = events.find(event => event.type === 'feedback/record')!
     headerlessExpected = events.filter(event => event.seq <= feedback.seq)
       .map(event => [headerless.id, event.seq, event.type])
-    await expect.poll(captured, { timeout: 10_000 }).toEqual([
-      ...authorized.map(event => [sessionId, event.seq, event.type]), ...headerlessExpected,
-    ])
-    expect(uploads.join('\n')).toContain('Feedback before any model request.')
+    expect(uploads).toEqual([])
+    expect(headerlessExpected.length).toBeGreaterThan(0)
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
   })

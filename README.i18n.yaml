@@ -4,7 +4,10 @@
 #   pnpm run verify-translation-pairing --write README.md
 /deepseek-harness:
   en: f68c4f080ce55ff2
-  zh: 88a76d7f7f0b260e
+  zh: be9b7afc6fbfe273
+/deepseek-harness/privacy-hardening:
+  en: 5e23670f18637169
+  zh: 8b03b3edcaa31c11
 /deepseek-harness/developer-preview:
   en: 4ef4d8a71ac143f0
   zh: 1bfc3149ba8e5543

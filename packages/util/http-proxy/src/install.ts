@@ -9,7 +9,9 @@
 
 import type { Dispatcher, Pool } from 'undici'
 import {
+  deniedReportingHost,
   isSupportedProxyUrl,
+  OutboundReportingDeniedError,
   POLICY_ENV_NAMES,
   PROXY_ENV_NAMES,
   proxyForUrl,
@@ -279,11 +281,45 @@ export function proxyEnvironmentForChild(): Readonly<Record<string, string | und
 }
 
 /**
+ * Read a fetch target without throwing on a value fetch itself will reject.
+ * @param input - the fetch resource.
+ * @returns the parsed URL, or undefined when it cannot be parsed here.
+ */
+function fetchTarget(input: Parameters<typeof fetch>[0]): URL | undefined {
+  try {
+    if (typeof input === 'string' || input instanceof URL) return new URL(input)
+    return new URL(input.url)
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Reject reporting-collector fetches before the original implementation runs.
+ * @returns a disposer that restores the previous `fetch` when this guard is still installed.
+ */
+function installReportingFetchGuard(): () => void {
+  const original = globalThis.fetch
+  const guarded: typeof fetch = (input, init) => {
+    const url = fetchTarget(input)
+    if (url !== undefined && deniedReportingHost(url)) {
+      return Promise.reject(new OutboundReportingDeniedError(url.hostname.replace(/\.$/, '').toLowerCase()))
+    }
+    return original(input, init)
+  }
+  globalThis.fetch = guarded
+  return () => {
+    if (globalThis.fetch === guarded) globalThis.fetch = original
+  }
+}
+
+/**
  * Resolve this process's proxy policy from `env` and install it.
  *
  * Resolution, reporting, and installation are one operation because no caller needs them apart: the
  * launcher does all three in sequence before the first plugin mounts, and a policy resolved but not
- * installed routes nothing.
+ * installed routes nothing. The same install rejects fetches to the reporting collector before any
+ * socket is opened. The error names that host and no request target beyond it.
  *
  * A value the environment supplies but this package cannot use is reported and skipped rather than
  * thrown: the variable may have been exported for another tool, and a proxy the harness cannot use
@@ -291,15 +327,28 @@ export function proxyEnvironmentForChild(): Readonly<Record<string, string | und
  *
  * @param env - the launch environment, whose own layering already prefers real variables over `.env` files.
  * @param report - receives one message per rejected value, in the order the values were considered.
- * @returns a disposer restoring the previous dispatcher, policy, and environment.
+ * @returns a disposer restoring the previous dispatcher, policy, environment, and `fetch`.
  */
 export async function installProxyFromEnvironment(
   env: EnvLookup,
   report: (message: string) => void,
 ): Promise<() => Promise<void>> {
-  const { policy, diagnostics } = resolveProxyPolicy(env)
-  for (const diagnostic of diagnostics) report(diagnostic.message)
-  return await installGlobalProxy(policy)
+  const restoreFetch = installReportingFetchGuard()
+  try {
+    const { policy, diagnostics } = resolveProxyPolicy(env)
+    for (const diagnostic of diagnostics) report(diagnostic.message)
+    const restoreProxy = await installGlobalProxy(policy)
+    return async () => {
+      try {
+        await restoreProxy()
+      } finally {
+        restoreFetch()
+      }
+    }
+  } catch (error) {
+    restoreFetch()
+    throw error
+  }
 }
 
 /**

@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-用于 DeepSeek 官方 LLM（大语言模型）API 请求的增量规范会话日志上传。该函数插件注入 `ctx.sessions` 与 `ctx.deepseekLlmApiExtensions`，并拥有 `dsh_session_log` 请求字段以及用于派生接受水位的持久 `session-log-deepseek/delivery-accepted` 事件。仅当官方 API 不得接收会话日志后缀时才禁用它。
+用于 DeepSeek 官方 LLM（大语言模型）API 请求的历史会话日志类型。该函数插件不贡献 `dsh_session_log`，即使 `enabled` 为 true 也不会贡献。旧日志仍可能包含 `session-log-deepseek/delivery-accepted`。见 [PRIVACY_HARDENING.md](../../../PRIVACY_HARDENING.md)。
 
 ## 目录
 

@@ -74,28 +74,10 @@ export default class ProductAnalytics extends TypertRemoteService {
   }
 
   /**
-   * Submit selected Desktop fields; missing identity is omitted and never generated.
-   * @param event - typed product event without message contents or credentials.
-   * @returns after local submission; no delivery or warehouse acknowledgement.
+   * Drop a Desktop analytics event. Identity is not read and nothing is exported.
+   * @param _event - typed product event, discarded locally.
+   * @returns immediately, without a delivery acknowledgement.
    */
   @Remote
-  async report(event: ProductEvent): Promise<void> {
-    if (!this.enabled()) return
-    try {
-      const identity = await this.ctx.deepseekAccount.getDeviceIdentity().catch(() => undefined)
-      if (!this.enabled()) return
-      this.ctx.productTelemetry.emit({
-        ...event, body: event.eventName,
-        attributes: {
-          ...event.attributes,
-          ...identity?.deviceId === undefined ? {} : { device_id: identity.deviceId },
-          ...identity?.userId === undefined ? {} : { user_id: identity.userId },
-          ...this.config.appVersion === undefined ? {} : { app_version: this.config.appVersion },
-          ...identity === undefined ? {} : { os_version: identity.osVersion },
-        },
-      })
-    } catch (error) {
-      this.ctx.logger.warn('Product analytics submission failed', error)
-    }
-  }
+  async report(_event: ProductEvent): Promise<void> {}
 }

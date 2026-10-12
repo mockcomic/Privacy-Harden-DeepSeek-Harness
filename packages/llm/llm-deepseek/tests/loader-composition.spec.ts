@@ -14,7 +14,6 @@ import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import LocalCredentialProvider from '@deepseek-ai/dsh-credentials-local'
 import { profileComposition } from '../../../settings/settings/tests/profile-composition.ts'
-import { getOrCreateAnonymousUserId } from '@deepseek-ai/dsh-anonymous-user-id'
 import DeepSeekLlmApiExtensionRegistry from '@deepseek-ai/dsh-deepseek-llm-api-extensions'
 import * as SessionLogDeepSeek from '@deepseek-ai/dsh-session-log-deepseek'
 import * as DeepSeekPluginPackageInventory from '@deepseek-ai/dsh-plugin-package-inventory-deepseek'
@@ -156,13 +155,7 @@ describe('llm-deepseek real dynamic composition', () => {
     await assemble(ctx, { model: 'deepseek-v4-flash', messages: [], sessionId: session.id })
     const request = server.requests[0] as { dsh_plugin_packages: { version: number; packages: unknown[] } }
     expect(request).not.toHaveProperty('dsh_session_log')
-    expect(request.dsh_plugin_packages.packages).toEqual(expect.arrayContaining([
-      { name: '@deepseek-ai/dsh-deepseek-llm-api-extensions', version: '0.1.0-rc.8' },
-      { name: '@deepseek-ai/dsh-llm-deepseek-api-key', version: '0.1.0-rc.8' },
-      { name: '@deepseek-ai/dsh-session-log-deepseek', version: '0.1.0-rc.8' },
-    ]))
-    expect(request.dsh_plugin_packages.version).toBe(1)
-    expect(SessionLogDeepSeek.acceptedThrough(session)).toBe(-1)
+    expect(request).not.toHaveProperty('dsh_plugin_packages')
   })
 
   it('sends the canonical session suffix by default through Loader composition', async () => {
@@ -185,14 +178,8 @@ describe('llm-deepseek real dynamic composition', () => {
         events: Array<{ type: string; seq: number }>
       }
     }
-    expect(request.dsh_session_log).toMatchObject({
-      version: 1,
-      session: { id: 'extension-composition-enabled' },
-      afterSeq: -1,
-      throughSeq: 0,
-      events: [{ type: 'turn/start', seq: 0 }],
-    })
-    expect(SessionLogDeepSeek.acceptedThrough(session)).toBe(0)
+    expect(request).not.toHaveProperty('dsh_session_log')
+    expect(request).not.toHaveProperty('dsh_plugin_packages')
   })
 
   it('boots from cordis.yml and routes the next request after external settings and credential edits', async () => {
@@ -204,7 +191,7 @@ describe('llm-deepseek real dynamic composition', () => {
     expect(ctx.settings.describe().map(entry => entry.ns)).toContain(NS)
     await assemble(ctx, { model: 'deepseek-v4-flash', messages: [] })
     expect(serverA.headers[0]?.['x-api-key']).toBe('boot-key')
-    expect(serverA.headers[0]?.['x-deepseek-harness-user-id']).toBe(getOrCreateAnonymousUserId())
+    expect(serverA.headers[0]).not.toHaveProperty('x-deepseek-harness-user-id')
 
     // External edits, exactly as a user or the web UI would leave them on disk.
     await writeFile(settingsPath, JSON.stringify([{ id: NS, config: { baseURL: serverB.url } }]))

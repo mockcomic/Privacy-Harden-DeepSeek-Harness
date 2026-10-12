@@ -7,7 +7,6 @@ import { randomUUID } from 'node:crypto'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createRequire } from 'node:module'
 import { pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context, LoggerLevel } from '@deepseek-ai/cordis'
@@ -162,45 +161,25 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('DeepSeek Messages real API', () 
     await ctx.loader.create({ name: '@deepseek-ai/dsh-plugin-package-inventory-deepseek' })
     await ctx.loader.create({ name: unversionedModule })
     await ctx.loader.await()
-    const packagePath = createRequire(import.meta.url).resolve('@deepseek-ai/dsh-plugin-package-inventory-deepseek/package.json')
-    const packageIdentity = JSON.parse(await readFile(packagePath, 'utf8')) as { name: string; version: string }
     const session = ctx.sessions.create(SessionId(`real-messages-extensions-${randomUUID()}`))
     session.append('turn/start', { turn: 1 })
     const fetchImpl = globalThis.fetch
-    let afterSeq: number = -1
-    let throughSeq = 0
     let requests = 0
     vi.stubGlobal('fetch', async (input: string | URL | Request, init?: RequestInit) => {
       const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
       if (url !== `${Protocol.PUBLIC_BASE_URL}/v1/messages`) return fetchImpl(input, init)
       if (typeof init?.body !== 'string') throw new Error('expected a JSON Messages request')
       const body = JSON.parse(init.body) as Record<string, unknown>
-      expect(body.dsh_plugin_packages).toStrictEqual({
-        version: 1, packages: [
-          { name: packageIdentity.name, version: packageIdentity.version },
-          { name: unversionedName },
-        ],
-      })
-      if (enabled) {
-        expect(body).toMatchObject({ dsh_session_log: {
-          version: 1, sessionFormatVersion: session.header.version, session: { id: session.id },
-          afterSeq, throughSeq,
-          events: Array.from({ length: throughSeq - afterSeq }, (_, index) => ({ seq: afterSeq + index + 1 })),
-        } })
-      } else expect(body).not.toHaveProperty('dsh_session_log')
-      expect(SessionLogDeepSeek.acceptedThrough(session)).toBe(afterSeq)
+      expect(body).not.toHaveProperty('dsh_plugin_packages')
+      expect(body).not.toHaveProperty('dsh_session_log')
       const response = await fetchImpl(input, init)
       expect(response.ok).toBe(true)
-      expect(SessionLogDeepSeek.acceptedThrough(session)).toBe(afterSeq)
       requests += 1
       return response
     })
     for (let run = 0; run < 2; run++) {
-      afterSeq = SessionLogDeepSeek.acceptedThrough(session)
-      throughSeq = Number(session.seq) - 1
       const assembler = new BlockAssembler()
       for await (const chunk of ctx.llm.stream(options({ sessionId: session.id, reasoningEffort: ReasoningEffortId('off'), messages: [user('Reply with exactly PONG.')] }))) {
-        expect(SessionLogDeepSeek.acceptedThrough(session)).toBe(enabled ? throughSeq : -1)
         assembler.push(chunk)
       }
       expect(assembler.finish.kind).toBe('stop')
@@ -208,7 +187,7 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('DeepSeek Messages real API', () 
       expect(requests).toBe(run + 1)
       if (run === 0) session.append('step/start', { turn: 1, step: 1 })
     }
-    expect(session.snapshotEvents().filter(event => event.type === 'session-log-deepseek/delivery-accepted')).toHaveLength(enabled ? 2 : 0)
+    expect(session.snapshotEvents().filter(event => event.type === 'session-log-deepseek/delivery-accepted')).toHaveLength(0)
   })
 
   it.each(['off', 'low', 'high', 'max'])('streams text with %s effort', async (effort) => {

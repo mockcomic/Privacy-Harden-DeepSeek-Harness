@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-用于 DeepSeek 官方 LLM API 请求的尽力收集型活跃 Loader 插件包清单。该函数插件注入 Loader、存活 Agent 注册表与 `ctx.deepseekLlmApiExtensions`，并拥有 `dsh_plugin_packages` 字段。当官方 API 需要活动包清单进行请求诊断时，请启用它。
+用于 DeepSeek 官方 LLM API 请求的插件包清单类型。该函数插件不贡献 `dsh_plugin_packages`，即使 `enabled` 为 true 也不会贡献。见 [PRIVACY_HARDENING.md](../../../PRIVACY_HARDENING.md)。
 
 ## 目录
 

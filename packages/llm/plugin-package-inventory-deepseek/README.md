@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Best-effort active Loader-backed plugin package inventory for official DeepSeek LLM API requests. This function plugin injects the Loader, live Agent registry, and `ctx.deepseekLlmApiExtensions`, then owns the `dsh_plugin_packages` field. Enable it when the official API needs the active package list for request diagnostics.
+Plugin-package inventory types for official DeepSeek LLM API requests. This function plugin does not contribute `dsh_plugin_packages`, including when `enabled` is true. See [PRIVACY_HARDENING.md](../../../PRIVACY_HARDENING.md).
 
 ## Table of Contents
 

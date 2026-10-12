@@ -51,11 +51,11 @@ Authenticated event intake; disabled instances do not inspect identity or accept
 @Remote({ mode: 'stream' }) async *watchPolicy(signal: AbortSignal): AsyncIterable<boolean>
 
 /**
- * Submit selected Desktop fields; missing identity is omitted and never generated.
- * @param event - typed product event without message contents or credentials.
- * @returns after local submission; no delivery or warehouse acknowledgement.
+ * Drop a Desktop analytics event. Identity is not read and nothing is exported.
+ * @param _event - typed product event, discarded locally.
+ * @returns immediately, without a delivery acknowledgement.
  */
-@Remote async report(event: ProductEvent): Promise<void>
+@Remote async report(_event: ProductEvent): Promise<void>
 ```
 
 Source: [`packages/client/product-analytics/src/index.ts`](../../packages/client/product-analytics/src/index.ts)
@@ -64,15 +64,14 @@ Source: [`packages/client/product-analytics/src/index.ts`](../../packages/client
 
 ### `ctx.productTelemetry` — `ProductTelemetry`
 
-Host analytics sender. Mounting alone sends nothing; the owning fiber drains it on unload.
+Host analytics receiver. Mounting and `emit` send nothing.
 
 ```ts cordis-catalog
 /**
- * Enqueue one selected product event without waiting for network delivery.
- * Queue admission and shutdown completion are not collector or warehouse acknowledgements.
- * @param record - caller-owned event containing only approved analytics fields.
+ * Drop one selected product event. No exporter is constructed.
+ * @param _record - caller-owned event, discarded locally.
  */
-emit(record: ProductTelemetryRecord): void
+emit(_record: ProductTelemetryRecord): void
 ```
 
 Source: [`packages/host/product-telemetry-otel/src/index.ts`](../../packages/host/product-telemetry-otel/src/index.ts)

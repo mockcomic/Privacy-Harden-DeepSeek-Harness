@@ -449,6 +449,26 @@ describe('the published environment', () => {
   })
 })
 
+describe('reporting collector denial', () => {
+  it('rejects the collector host and still reaches loopback', async () => {
+    await withCleanProxyEnv(async () => {
+      const { dispose } = await install(env({}))
+      try {
+        const secret = 'https://dsh-otel-collector.deepseeksvc.com/v1/logs?token=secret'
+        await expect(fetch(secret)).rejects.toThrow('Blocked outbound reporting connection to dsh-otel-collector.deepseeksvc.com')
+        await expect(fetch(new Request('https://DSH-OTEL-COLLECTOR.deepseeksvc.com./v1/logs?token=secret'))).rejects.toThrow(
+          'Blocked outbound reporting connection to dsh-otel-collector.deepseeksvc.com',
+        )
+        await expect(fetch(secret)).rejects.toThrow(/^Blocked outbound reporting connection to dsh-otel-collector\.deepseeksvc\.com$/)
+        await expect((await fetch(originUrl)).text()).resolves.toBe('DIRECT')
+        await expect(fetch('not a url')).rejects.toThrow()
+      } finally {
+        await dispose()
+      }
+    })
+  })
+})
+
 describe('clearedProxyEnv', () => {
   it('names every proxy variable for removal, so a replay reaches its own fixture server', () => {
     const cleared = clearedProxyEnv()
