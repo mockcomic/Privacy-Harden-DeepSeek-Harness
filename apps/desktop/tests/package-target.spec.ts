@@ -19,6 +19,12 @@ describe('desktop package target', () => {
     expect(resolveDesktopPackageTarget('win-x64', 'win32', 'x64')).toMatchObject({
       platform: 'win32', arch: 'x64', builderPlatform: '--win', builderArch: '--x64',
     })
+    expect(resolveDesktopPackageTarget('linux-x64', 'linux', 'x64')).toMatchObject({
+      platform: 'linux', arch: 'x64', builderPlatform: '--linux', builderArch: '--x64',
+    })
+    expect(resolveDesktopPackageTarget('linux-arm64', 'linux', 'arm64')).toMatchObject({
+      platform: 'linux', arch: 'arm64', builderPlatform: '--linux', builderArch: '--arm64',
+    })
   })
 
   it('allows an Apple Silicon host to build the Intel target through Rosetta', () => {
@@ -26,7 +32,9 @@ describe('desktop package target', () => {
   })
 
   it('rejects unsupported targets and hosts before building', () => {
-    expect(() => resolveDesktopPackageTarget('linux-x64', 'linux', 'x64')).toThrow(/unsupported target/u)
+    expect(() => resolveDesktopPackageTarget('linux-x64', 'linux', 'arm64')).toThrow(/Linux x64/u)
+    expect(() => resolveDesktopPackageTarget('linux-arm64', 'darwin', 'arm64')).toThrow(/Linux/u)
+    expect(() => resolveDesktopPackageTarget('freebsd-x64', 'freebsd', 'x64')).toThrow(/unsupported target/u)
     expect(() => resolveDesktopPackageTarget('win-x64', 'darwin', 'arm64')).toThrow(/Windows x64/u)
     expect(() => resolveDesktopPackageTarget('mac-arm64', 'darwin', 'x64')).toThrow(/Apple Silicon/u)
     expect(() => resolveDesktopPackageTarget('mac-arm64', 'linux', 'arm64')).toThrow(/macOS/u)
@@ -37,6 +45,10 @@ describe('desktop package target', () => {
     expect(parseDesktopPackageInvocation(['mac-arm64'], 'darwin', 'arm64').directory).toBe(false)
     expect(parseDesktopPackageInvocation(['mac-arm64', '--dir'], 'darwin', 'arm64').directory).toBe(true)
     expect(parseDesktopPackageInvocation([], 'darwin', 'arm64').target.name).toBe('mac-arm64')
+    expect(parseDesktopPackageInvocation([], 'linux', 'arm64')).toMatchObject({
+      target: { name: 'linux-arm64' }, unsigned: true,
+    })
+    expect(parseDesktopPackageInvocation(['linux-arm64'], 'linux', 'arm64').unsigned).toBe(true)
     expect(parseDesktopPackageInvocation(['--prepare-only'], 'darwin', 'arm64').prepareOnly).toBe(true)
     expect(parseDesktopPackageInvocation(['--check'], 'darwin', 'arm64').check).toBe(true)
     expect(parseDesktopPackageInvocation(['win-x64', '--check', '--unsigned'], 'win32', 'x64')).toMatchObject({ check: true, unsigned: true })
@@ -71,6 +83,11 @@ describe('desktop package target', () => {
       'never',
     ])
     expect(desktopElectronBuilderArguments(target, true)).toContain('--dir')
+    const linux = resolveDesktopPackageTarget('linux-arm64', 'linux', 'arm64')
+    expect(desktopElectronBuilderArguments(linux, false)).toEqual([
+      'exec', 'electron-builder', '--config', 'electron-builder.config.mjs',
+      '--linux', '--arm64', '--publish', 'never',
+    ])
   })
 
   it('accepts unsigned supported targets and rejects preparation-only use', () => {

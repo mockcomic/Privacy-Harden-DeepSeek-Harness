@@ -1,7 +1,5 @@
 # PR preview runner sizing
 
-English | [中文](README.zh.md)
-
 ## Summary
 
 Preview runner sizing compares complete job cost on standard GitHub-hosted `ubuntu-24.04`, not price per minute or core count alone.

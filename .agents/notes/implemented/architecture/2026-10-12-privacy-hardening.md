@@ -2,8 +2,6 @@
 
 Status: implemented
 
-English | [中文](2026-10-12-privacy-hardening.zh.md)
-
 ## Problem
 
 Shipped profiles could send session content, plugin inventories, and installation identifiers to DeepSeek-operated endpoints. `DSH_TELEMETRY_DISABLED` stopped only the feedback-gated OpenTelemetry row. A self-hosted coding agent must keep sessions, tools, and local inference without those reporting paths.

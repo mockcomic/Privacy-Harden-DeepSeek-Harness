@@ -1,7 +1,5 @@
 # DeepSeek Harness Desktop
 
-English | [中文](README.zh.md)
-
 Desktop analytics follows the [product collection policy](../../packages/client/product-analytics/README.md), including its live application setting. Web usage is excluded. Update installation waits for its local analytics intake before locking API admission and stopping the Host. Intake has a one-second deadline; failure does not prevent installation, and collector delivery is not awaited.
 
 The desktop application is an Electron shell around the complete dsh Web application. An Electron RunAsNode child starts the shared profile runner, and Electron immediately loads the packaged Web entry at `dsh-app://app/`. Its shared loading page waits for Host boot injections, then starts the client without navigating to another document. Electron forwards application HTTP requests to the authenticated Web Host, dropping connection-level response headers (`transfer-encoding`, `connection`, `keep-alive`) that describe the Node fetch rather than the resource, and marking plugin bundle responses `no-store` because their per-launch revisions would only accumulate in Chromium's disk cache; WebSocket streams connect to that Host with credentials attached only for the owned application window. Node IPC carries boot injections, readiness, and shutdown. Desktop listens on an OS-assigned port by default, so it cannot collide with Web’s `3080` or a reserved port; a `webserver.config.port` patch can override it.
@@ -112,7 +110,7 @@ The product UI retains Web actions, including "Open In..." through the shared au
 
 Update copy preserves the complete version, including prerelease suffixes, without adding v or V. When no update is available, the dialog title reports the result and the body shows the current version.
 
-Electron chooses typed English or Chinese shell copy from its application locale and falls back to English. The macOS application bundle declares English and Simplified Chinese in `CFBundleLocalizations`, allowing macOS to match the initial application language to the user’s preferred languages. Saved Client UI language preferences still take precedence for the main interface. On Windows, the main document's language updates desktop menus, recovery and update prompts. The repository Client UI i18n gate checks desktop sources.
+Electron uses typed English shell copy. The macOS application bundle declares English in `CFBundleLocalizations`. On Windows, the main document's language updates desktop menus, recovery and update prompts. The repository Client UI i18n gate checks desktop sources.
 
 Windows and macOS relay native fullscreen transitions and the state after each page load to the renderer, so overlays can adapt their caption clearance.
 
@@ -237,9 +235,11 @@ Release automation uses fixed target commands so runtime preparation, dsh prepar
 pnpm run package:desktop:mac:arm64
 pnpm run package:desktop:mac:x64
 pnpm run package:desktop:win:x64
+pnpm run package:desktop:linux:x64
+pnpm run package:desktop:linux:arm64
 ```
 
-The macOS arm64 command requires Apple Silicon. The macOS x64 command runs on Intel macOS or Apple Silicon with Rosetta. The Windows x64 command requires Windows x64. Linux is not a supported Desktop release target.
+The macOS arm64 command requires Apple Silicon. The macOS x64 command runs on Intel macOS or Apple Silicon with Rosetta. The Windows x64 command requires Windows x64. The Linux x64 and arm64 commands require a Linux host of that architecture and produce an AppImage; those builds stay local and are not update-feed release targets.
 
 Each target owns its packed package inputs, prepared runtime, package set, dsh tree, pnpm preparation state, unpacked application, update metadata, and final artifacts under `apps/desktop/.desktop-build/targets/<target>/`. The Electron archive cache remains shared under `.desktop-build/downloads` because every archive name includes its version, platform, and architecture and is verified before extraction. A target build never consumes another target's mutable preparation state.
 
@@ -255,6 +255,19 @@ pnpm run package:desktop:mac:x64:unsigned
 Add `--check` to validate local configuration and tools without building, or `--dir` to stop at the unpacked application. The DMG is `apps/desktop/.desktop-build/targets/<target>/unsigned-artifacts/deepseek-harness-<version>-mac-<arch>-unsigned.dmg`. After all checks pass, the command prints `DMG:` followed by its absolute path. Open it and copy the application to a local test directory.
 
 These commands ignore `.env.macos` and inherited release settings, use `com.deepseek.harness` as the app ID, and omit automatic-update and mandatory-update configuration. Build tools, standard network proxies, and `DSH_DESKTOP_NPM_REGISTRY` remain available from the shell. They skip Developer ID signing, Apple notarization, temporary signing keychains, and notarization proxy changes. Electron receives a local ad-hoc signature without certificates so the modified executable can run; the DMG is unsigned. Both preparation and the assembled application still run runtime integrity and smoke checks. Local builds omit update feeds, ZIPs, and release completion records, and the upload commands cannot publish them. macOS may require approval in System Settings → Privacy & Security to open an unnotarized application.
+
+### Local Linux AppImage
+
+After `pnpm install`, run one command from the repository root on a Linux host of the same architecture. No `.env.macos`, `.env.windows`, certificate, or update service configuration is required. On Linux, `pnpm run package:desktop` selects that host's architecture.
+
+```sh
+pnpm run package:desktop:linux:x64
+pnpm run package:desktop:linux:arm64
+```
+
+`linux-x64` requires Linux x64. `linux-arm64` requires Linux arm64. Add `--check` to validate local configuration and tools without building, or `--dir` to stop at the unpacked application. The AppImage is `apps/desktop/.desktop-build/targets/<target>/unsigned-artifacts/deepseek-harness-<version>-linux-<arch>-unsigned.AppImage`. After all checks pass, the command prints `APPIMAGE:` followed by its absolute path.
+
+These commands ignore inherited release settings, use `com.deepseek.harness` as the app ID, and omit automatic-update and mandatory-update configuration. They do not produce an update feed or a release completion record, and the upload commands cannot publish them.
 
 ### Local Official bundles from a loopback registry
 
@@ -423,6 +436,9 @@ Create a runnable application directory instead of an installer by using the mat
 ```sh
 pnpm run package:desktop:dir
 pnpm run package:desktop:mac:arm64:dir
+pnpm run package:desktop:win:x64:dir
+pnpm run package:desktop:linux:x64:dir
+pnpm run package:desktop:linux:arm64:dir
 ```
 
 To inspect or troubleshoot the prepared host-target resources without invoking electron-builder, stop the same pipeline after preparation:

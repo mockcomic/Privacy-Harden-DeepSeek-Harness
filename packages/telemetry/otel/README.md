@@ -5,8 +5,6 @@ kind: "package-reference"
 
 # @deepseek-ai/dsh-otel
 
-English | [中文](README.zh.md)
-
 ## Summary
 
 Mount one `otel` service to create ordinary-event and Session-log channels that drop records locally. `createLogExporter` and `createEventLogExporter` throw before any HTTP client is created. See [PRIVACY_HARDENING.md](../../../PRIVACY_HARDENING.md).

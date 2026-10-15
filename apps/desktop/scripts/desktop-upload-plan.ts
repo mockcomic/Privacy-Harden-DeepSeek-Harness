@@ -21,7 +21,7 @@ const TARGETS = {
   'mac-arm64': { platform: 'darwin', arch: 'arm64', os: 'mac' },
   'mac-x64': { platform: 'darwin', arch: 'x64', os: 'mac' },
   'win-x64': { platform: 'win32', arch: 'x64', os: 'win' },
-} as const satisfies Record<DesktopPackageTargetName, {
+} as const satisfies Record<'mac-arm64' | 'mac-x64' | 'win-x64', {
   readonly platform: NodeJS.Platform
   readonly arch: string
   readonly os: string
@@ -180,10 +180,10 @@ export async function createDesktopUploadPlan(
   targetName: DesktopPackageTargetName,
   options: DesktopUploadPlanOptions = {},
 ): Promise<DesktopUploadPlan> {
-  const target = TARGETS[targetName]
-  if (target === undefined) {
-    throw new Error(`desktop upload: unsupported target ${String(targetName)}`)
+  if (targetName === 'linux-x64' || targetName === 'linux-arm64') {
+    throw new Error(`desktop upload: unsupported target ${targetName}`)
   }
+  const target = TARGETS[targetName]
   const environment = options.environment ?? process.env
   const repositoryRoot = options.repositoryRoot ?? REPOSITORY_ROOT
   const appRoot = options.appRoot ?? APP_ROOT

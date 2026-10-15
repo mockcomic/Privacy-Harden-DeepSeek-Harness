@@ -10,7 +10,7 @@ import {
 } from './desktop-auto-update-environment.mjs'
 import { desktopTargetBuildPaths } from './desktop-build-paths.mjs'
 import { packageMacOSArtifacts, type DesktopPrepackagedArtifact } from './package-macos.ts'
-import { loadDesktopPackageEnvironment, localMacOSPackageEnvironment, validateDesktopPackageEnvironment } from './desktop-package-environment.mjs'
+import { loadDesktopPackageEnvironment, localLinuxPackageEnvironment, localMacOSPackageEnvironment, validateDesktopPackageEnvironment } from './desktop-package-environment.mjs'
 import { createPackagingRun, recordPackagingEvent } from './packaging-run.mjs'
 import { withWindowsSigningStage } from './windows-signing-stage.mjs'
 import { prepareWindowsSignatureCacheDirectory, resolveWindowsSignatureCacheDirectory } from './windows-signature-cache-directory.mjs'
@@ -47,14 +47,14 @@ const DESKTOP_UPLOAD_CREDENTIAL_ENV_NAMES = new Set([
 const AUTOMATIC_BUILD_VERSION = 'auto'
 
 /** Fixed platform and architecture identifiers exposed by package scripts. */
-export type DesktopPackageTargetName = 'mac-arm64' | 'mac-x64' | 'win-x64'
+export type DesktopPackageTargetName = 'mac-arm64' | 'mac-x64' | 'win-x64' | 'linux-x64' | 'linux-arm64'
 
 /** One supported release target and its electron-builder selectors. */
 export interface DesktopPackageTarget {
   readonly name: DesktopPackageTargetName
-  readonly platform: 'darwin' | 'win32'
+  readonly platform: 'darwin' | 'win32' | 'linux'
   readonly arch: 'arm64' | 'x64'
-  readonly builderPlatform: '--mac' | '--win'
+  readonly builderPlatform: '--mac' | '--win' | '--linux'
   readonly builderArch: '--arm64' | '--x64'
 }
 
@@ -79,6 +79,20 @@ const TARGETS: Record<DesktopPackageTargetName, DesktopPackageTarget> = {
     arch: 'x64',
     builderPlatform: '--win',
     builderArch: '--x64',
+  },
+  'linux-x64': {
+    name: 'linux-x64',
+    platform: 'linux',
+    arch: 'x64',
+    builderPlatform: '--linux',
+    builderArch: '--x64',
+  },
+  'linux-arm64': {
+    name: 'linux-arm64',
+    platform: 'linux',
+    arch: 'arm64',
+    builderPlatform: '--linux',
+    builderArch: '--arm64',
   },
 }
 
@@ -133,8 +147,17 @@ function packageVersion(path: string, label: string): string {
   return manifest.version
 }
 
+type DesktopReleasePackageTarget = DesktopPackageTarget & {
+  readonly name: 'mac-arm64' | 'mac-x64' | 'win-x64'
+  readonly platform: 'darwin' | 'win32'
+}
+
+function isDesktopReleaseTarget(target: DesktopPackageTarget): target is DesktopReleasePackageTarget {
+  return target.platform !== 'linux'
+}
+
 function writeReleaseRecord(
-  target: DesktopPackageTarget,
+  target: DesktopReleasePackageTarget,
   environment: NodeJS.ProcessEnv,
   artifactsRoot: string,
 ): void {
@@ -188,6 +211,12 @@ export function resolveDesktopPackageTarget(
   if (name === 'mac-x64' && hostArch !== 'arm64' && hostArch !== 'x64') {
     throw new Error('desktop package: mac-x64 requires an Intel Mac or Apple Silicon with Rosetta')
   }
+  if (target.platform === 'linux' && hostPlatform !== 'linux') {
+    throw new Error(`desktop package: ${name} requires a Linux build host`)
+  }
+  if (target.platform === 'linux' && hostArch !== target.arch) {
+    throw new Error(`desktop package: ${name} requires a Linux ${target.arch} build host`)
+  }
   return target
 }
 
@@ -239,11 +268,13 @@ export function parseDesktopPackageInvocation(
   if (values['build-version'] !== undefined && (requestedBuildVersion === undefined || requestedBuildVersion === '')) {
     throw new Error('desktop package: --build-version requires a value')
   }
+  const target = resolveDesktopPackageTarget(name, hostPlatform, hostArch)
   return {
-    target: resolveDesktopPackageTarget(name, hostPlatform, hostArch),
+    target,
     directory: values.dir,
     prepareOnly: values['prepare-only'],
-    unsigned: values.unsigned,
+    // Linux AppImages are local builds. There is no signed release or update feed for them.
+    unsigned: values.unsigned || target.platform === 'linux',
     check: values.check,
     requestedBuildVersion,
   }
@@ -331,9 +362,11 @@ async function resolveRequestedBuildVersion(
 async function main(): Promise<void> {
   const invocation = parseDesktopPackageInvocation(process.argv.slice(2))
   const { target } = invocation
-  const environment = target.platform === 'darwin' && invocation.unsigned
-    ? localMacOSPackageEnvironment()
-    : loadDesktopPackageEnvironment(target.platform)
+  const environment = target.platform === 'linux'
+    ? localLinuxPackageEnvironment()
+    : target.platform === 'darwin' && invocation.unsigned
+      ? localMacOSPackageEnvironment()
+      : loadDesktopPackageEnvironment(target.platform)
   const productVersion = packageVersion(join(APP_ROOT, 'package.json'), 'desktop package')
   // Release settings come from the target dotenv file alone, so the version this run publishes is an
   // argument; the environment variable below only carries it to the child processes that build.
@@ -370,6 +403,8 @@ async function main(): Promise<void> {
       await packagingStep(run.directory, 'macos-package', () => invocation.unsigned
         ? packageTarget(invocation, environment, run)
         : withMacOSSigningKeychain(environment, signingEnvironment => packageTarget(invocation, signingEnvironment, run)), secrets)
+    } else if (target.platform === 'linux') {
+      await packagingStep(run.directory, 'linux-package', () => packageTarget(invocation, environment, run), secrets)
     } else {
       await packagingStep(run.directory, 'windows-package', () => packageTarget(invocation, environment, run), secrets)
     }
@@ -387,6 +422,11 @@ async function main(): Promise<void> {
     const paths = desktopTargetBuildPaths(target.name)
     const filename = `deepseek-harness-${buildVersion}-mac-${target.arch}${invocation.unsigned ? '-unsigned' : ''}.dmg`
     console.log(`DMG: ${join(invocation.unsigned ? paths.unsignedArtifacts : paths.artifacts, filename)}`)
+  }
+  if (success && target.platform === 'linux' && !invocation.directory && !invocation.prepareOnly) {
+    const paths = desktopTargetBuildPaths(target.name)
+    const filename = `deepseek-harness-${buildVersion}-linux-${target.arch}-unsigned.AppImage`
+    console.log(`APPIMAGE: ${join(paths.unsignedArtifacts, filename)}`)
   }
 }
 
@@ -409,8 +449,8 @@ export async function packageTarget(
   const mac = target.platform === 'darwin' ? resolveMacOSPackageSettings(environment) : undefined
   const packArguments = mac === undefined ? [] : ['--concurrency', String(mac.packConcurrency)]
   const buildPaths = desktopTargetBuildPaths(target.name)
-  const releaseRecordPath = join(buildPaths.artifacts, desktopBuildRecordFilename(target.name))
-  if (!invocation.prepareOnly && !invocation.unsigned) {
+  if (!invocation.prepareOnly && !invocation.unsigned && isDesktopReleaseTarget(target)) {
+    const releaseRecordPath = join(buildPaths.artifacts, desktopBuildRecordFilename(target.name))
     rmSync(releaseRecordPath, { force: true })
     rmSync(`${releaseRecordPath}.tmp`, { force: true })
   }
@@ -504,7 +544,9 @@ export async function packageTarget(
     await signedStage('artifacts', () => execute(desktopElectronBuilderArguments(target, invocation.directory), electronBuilderEnv))
     await execute(['exec', 'tsx', 'scripts/smoke-packaged-runtime.ts', ...(invocation.unsigned ? ['--unsigned'] : [])], targetEnv)
   }
-  if (!invocation.directory && !invocation.unsigned) writeReleaseRecord(target, electronBuilderEnv, buildPaths.artifacts)
+  if (!invocation.directory && !invocation.unsigned && isDesktopReleaseTarget(target)) {
+    writeReleaseRecord(target, electronBuilderEnv, buildPaths.artifacts)
+  }
   if (journal) recordPackagingEvent(journal, { type: 'artifacts', directory: invocation.unsigned ? buildPaths.unsignedArtifacts : buildPaths.artifacts })
 }
 

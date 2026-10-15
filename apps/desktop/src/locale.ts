@@ -347,9 +347,8 @@ export interface DesktopLocale {
 
 /** Resolve Electron's locale to one shipped Desktop dictionary. */
 export function resolveDesktopLocale(locale: string): DesktopLocale {
-  return locale.toLowerCase().startsWith('zh')
-    ? { id: 'zh-CN', messages: zh }
-    : { id: 'en', messages: en }
+  void locale
+  return { id: 'en', messages: en }
 }
 
 /**
@@ -359,12 +358,8 @@ export function resolveDesktopLocale(locale: string): DesktopLocale {
  * @returns the supported dictionary, falling back to English.
  */
 export function resolveDesktopStartupLocale(preference: string | null, languages: readonly string[]): DesktopLocale {
-  const selected = preference?.toLowerCase()
-  if (selected === 'zh' || selected === 'en') return resolveDesktopLocale(selected)
-  for (const language of languages) {
-    const primary = language.toLowerCase().split('-')[0]
-    if (primary === 'zh' || primary === 'en') return resolveDesktopLocale(primary)
-  }
+  void preference
+  void languages
   return resolveDesktopLocale('en')
 }
 

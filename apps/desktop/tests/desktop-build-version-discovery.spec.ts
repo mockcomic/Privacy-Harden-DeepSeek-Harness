@@ -62,6 +62,14 @@ describe('desktop build version discovery', () => {
       .resolves.toBe(`${PRERELEASE}.${DATE}.1`)
   })
 
+  it('numbers after a local Linux AppImage', async () => {
+    const artifactsRoot = await artifactsWith([
+      `deepseek-harness-${PRERELEASE}.${DATE}.2-linux-arm64-unsigned.AppImage`,
+    ])
+    await expect(suggestDesktopBuildVersion({ productVersion: PRERELEASE, target: 'linux-arm64', environment: {}, date: DATE, artifactsRoot }))
+      .resolves.toBe(`${PRERELEASE}.${DATE}.3`)
+  })
+
   it('reads macOS artifact names too', async () => {
     const artifactsRoot = await artifactsWith([
       `deepseek-harness-${PRERELEASE}.${DATE}.3-mac-arm64.dmg`,

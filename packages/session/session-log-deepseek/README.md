@@ -5,8 +5,6 @@ kind: "package-reference"
 
 # @deepseek-ai/dsh-session-log-deepseek
 
-English | [中文](README.zh.md)
-
 ## Summary
 
 Historical session-log types for official DeepSeek LLM API requests. This function plugin does not contribute `dsh_session_log`, including when `enabled` is true. Older logs can still contain `session-log-deepseek/delivery-accepted`. See [PRIVACY_HARDENING.md](../../../PRIVACY_HARDENING.md).

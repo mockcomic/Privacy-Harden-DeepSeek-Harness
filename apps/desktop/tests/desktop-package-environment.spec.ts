@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { loadDesktopPackageEnvironment, localMacOSPackageEnvironment, validateDesktopPackageEnvironment } from '../scripts/desktop-package-environment.mjs'
+import { loadDesktopPackageEnvironment, localLinuxPackageEnvironment, localMacOSPackageEnvironment, validateDesktopPackageEnvironment } from '../scripts/desktop-package-environment.mjs'
 import { resolveWindowsPackageSettings } from '../scripts/windows-package-settings.mjs'
 
 const WINDOWS = { platform: 'win32', arch: 'x64' } as const
@@ -40,6 +40,9 @@ describe('Desktop local packaging configuration', () => {
     expect(() => { validateDesktopPackageEnvironment(local, MACOS, { unsigned: true }) }).not.toThrow()
     expect(parent.DSH_DESKTOP_UNSIGNED).toBe('0')
     expect(parent.DSH_DESKTOP_APP_ID).toBe('com.example.release')
+    const linux = localLinuxPackageEnvironment(parent)
+    expect(linux).toEqual(local)
+    expect(() => { validateDesktopPackageEnvironment(linux, { platform: 'linux', arch: 'arm64' }) }).not.toThrow()
   })
 
   it('takes cache concurrency from the Windows file and defaults to four without ambient overrides', async () => {

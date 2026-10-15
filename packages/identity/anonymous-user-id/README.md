@@ -5,8 +5,6 @@ kind: "package-library"
 
 # @deepseek-ai/dsh-anonymous-user-id
 
-English | [中文](README.zh.md)
-
 ## Summary
 
 `getOrCreateAnonymousUserId` can still persist a random UUID at `$DSH_HOME/.anonymous-user-id`. Shipped profiles do not call it, and model requests do not send it. An existing file is left unread. See [PRIVACY_HARDENING.md](../../../PRIVACY_HARDENING.md).

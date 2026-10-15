@@ -5,8 +5,6 @@ kind: "package-reference"
 
 # @deepseek-ai/dsh-session-telemetry-otel
 
-English | [中文](README.zh.md)
-
 ## Summary
 
 The adapter injects `otel` and registers `sessionTelemetry`. It does not construct an exporter, mint an anonymous user id, or upload a session prefix. `FEEDBACK_ONLY` and `DISABLED` both stay local and warn when new feedback is recorded. `FULL` is rejected. See [PRIVACY_HARDENING.md](../../../PRIVACY_HARDENING.md).

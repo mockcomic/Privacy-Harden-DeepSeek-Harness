@@ -11,4 +11,14 @@ while [ -L "$launcher" ]; do
   esac
 done
 resources=$(CDPATH= cd -- "$(dirname -- "$launcher")/../../.." && pwd -P)
-ELECTRON_RUN_AS_NODE=1 exec "$resources/../MacOS/DeepSeek Harness" --expose-internals "$resources/app.asar/dsh/node_modules/@deepseek-ai/dsh-desktop-host/lib/cli.js" "$@"
+mac_executable="$resources/../MacOS/DeepSeek Harness"
+linux_executable="$resources/../deepseek-harness"
+if [ -x "$mac_executable" ]; then
+  executable=$mac_executable
+elif [ -x "$linux_executable" ]; then
+  executable=$linux_executable
+else
+  echo "dsh: cannot find the packaged application executable" >&2
+  exit 1
+fi
+ELECTRON_RUN_AS_NODE=1 exec "$executable" --expose-internals "$resources/app.asar/dsh/node_modules/@deepseek-ai/dsh-desktop-host/lib/cli.js" "$@"

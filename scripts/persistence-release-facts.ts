@@ -2,7 +2,6 @@
 
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { renderPersistencePair } from './persistence-artifacts.ts'
 import type { PersistenceArtifact } from './persistence-artifacts.ts'
 import type { PersistenceReleaseEntry, PersistenceReleases } from './persistence-releases.ts'
 import { canonicalizeSchema, schemaDigest } from './persistence-schema-model.ts'
@@ -77,9 +76,7 @@ export function persistenceReleaseFactArtifacts(root: string, archive: Persisten
     })
     return '\n\n' + [heading, '|---|---|---|---|---|', ...rows].join('\n') + '\n\n'
   }
-  const artifacts = renderPersistencePair(root, `${directory}/README.md`,
-    replaceFacts(read('README.md'), 'index', index('en'), 'README.md'),
-    replaceFacts(read('README.zh.md'), 'index', index('zh'), 'README.zh.md'))
+  const artifacts = [{ path: `${directory}/README.md`, content: replaceFacts(read('README.md'), 'index', index('en'), 'README.md') }]
   for (const [index, entry] of archive.entries.entries()) {
     const document = (language: Language): string => {
       const path = `${entry.release.tag}${language === 'zh' ? '.zh' : ''}.md`
@@ -89,7 +86,7 @@ export function persistenceReleaseFactArtifacts(root: string, archive: Persisten
       return replaceFacts(replaceFacts(read(path), 'inventory', inventory, path),
         'changes', '\n\n' + structuralChanges(entry, language) + '\n\n', path)
     }
-    artifacts.push(...renderPersistencePair(root, `${directory}/${entry.release.tag}.md`, document('en'), document('zh')))
+    artifacts.push({ path: `${directory}/${entry.release.tag}.md`, content: document('en') })
   }
   return artifacts
 }

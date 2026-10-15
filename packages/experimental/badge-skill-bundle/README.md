@@ -5,8 +5,6 @@ kind: "package-bundle"
 
 # @deepseek-ai/dsh-experimental-badge-skill-bundle
 
-English | [中文](README.zh.md)
-
 ## Summary
 
 Offer the experimental DSH badge skill to Agents whose presets load skills. The shared provider adds no model tool. It ships switched off in Web and Desktop. Select it in Plugins to enable it.

@@ -23,7 +23,7 @@ import type { FontSettingsInjected } from './FontSettingsGroup.tsx'
 import { FontSettingsGroup } from './FontSettingsGroup.tsx'
 import { createAppearanceRowStore, createFontRowStore } from './settings-store.ts'
 import { installThemeStyles } from './styles.ts'
-import { en, zh, type ThemeKey } from './locales.ts'
+import { en, type ThemeKey } from './locales.ts'
 import {
   DEFAULT_FONT_SIZES, DEFAULT_PREFERENCE, FONT_FAMILY_FIELDS, FONT_ROLES, FONT_SIZE_SPECS,
   fontFamilyVariable, isFontSize, isThemePreference, normalizeFontFamily, sectionFontSizes,
@@ -489,7 +489,7 @@ export function apply(ctx: ClientContext): void {
   const theme = new ThemeRuntime(ctx, host)
   ctx.provide('theme', theme)
 
-  ctx.effect(() => ctx.locale.register(SETTINGS_NS, { zh, en }), 'ui-theme: settings row dictionaries')
+  ctx.effect(() => ctx.locale.register(SETTINGS_NS, { en }), 'ui-theme: settings row dictionaries')
 
   const store = createAppearanceRowStore()
   let bound: BoundActions<typeof store> | undefined

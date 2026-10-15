@@ -5,8 +5,6 @@ kind: "package-reference"
 
 # @deepseek-ai/dsh-plugin-package-inventory-deepseek
 
-English | [中文](README.zh.md)
-
 ## Summary
 
 Plugin-package inventory types for official DeepSeek LLM API requests. This function plugin does not contribute `dsh_plugin_packages`, including when `enabled` is true. See [PRIVACY_HARDENING.md](../../../PRIVACY_HARDENING.md).

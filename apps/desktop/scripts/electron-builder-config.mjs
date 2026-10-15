@@ -57,10 +57,10 @@ export function createElectronBuilderConfig(
   if (env.DSH_DESKTOP_UNSIGNED !== undefined && !['0', '1'].includes(env.DSH_DESKTOP_UNSIGNED)) {
     throw new Error('desktop package: DSH_DESKTOP_UNSIGNED must be 0 or 1')
   }
-  const unsigned = env.DSH_DESKTOP_UNSIGNED === '1'
+  const unsigned = env.DSH_DESKTOP_UNSIGNED === '1' || resolvedPlatform === 'linux'
   const packagesMacOS = targetPlatform === 'darwin' || (targetPlatform === undefined && hostPlatform === 'darwin')
   const packagesWindows = resolvedPlatform === 'win32'
-  const policy = packagesMacOS && unsigned ? undefined : resolveDesktopPolicyEnvironment(env)
+  const policy = resolvedPlatform === 'linux' || (packagesMacOS && unsigned) ? undefined : resolveDesktopPolicyEnvironment(env)
   if (resolvedPlatform === 'win32') installWindowsDirectoryInstaller()
   const macOSSigning = packagesMacOS && !unsigned ? resolveMacOSSigningEnvironment(env) : undefined
   if (packagesMacOS && !unsigned) resolveMacOSNotarizationEnvironment(env)
@@ -150,7 +150,7 @@ export function createElectronBuilderConfig(
       icon: fileURLToPath(new URL('../resources/icon-macos.png', import.meta.url)),
       category: 'public.app-category.developer-tools',
       // macOS matches the application locale against this bundle, not Electron Framework resources.
-      extendInfo: { CFBundleLocalizations: ['en', 'zh_CN'] },
+      extendInfo: { CFBundleLocalizations: ['en'] },
       // Ad-hoc signing keeps the modified Electron executable runnable without a Developer ID.
       identity: unsigned ? '-' : macOSSigning?.signingIdentity,
       forceCodeSigning: !unsigned,
@@ -232,6 +232,8 @@ export function createElectronBuilderConfig(
     },
     linux: {
       category: 'Development',
+      executableName: 'deepseek-harness',
+      icon: fileURLToPath(new URL('../resources/icon.png', import.meta.url)),
       target: ['AppImage'],
     },
     nsis: {
@@ -242,7 +244,7 @@ export function createElectronBuilderConfig(
       perMachine: false,
       allowElevation: false,
       allowToChangeInstallationDirectory: false,
-      installerLanguages: ['en_US', 'zh_CN'],
+      installerLanguages: ['en_US'],
       differentialPackage: true,
     },
     detectUpdateChannel: false,

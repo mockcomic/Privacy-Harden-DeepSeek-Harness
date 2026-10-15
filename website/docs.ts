@@ -68,39 +68,61 @@ function localized<T>(value: T | Record<DocsLocale, T>, locale: DocsLocale): T {
     : value
 }
 
+function englishPage(page: {
+  source: string
+  route: string
+  contentLocale: DocsPage['contentLocale']
+  label: string
+  sidebar: DocsSidebar | null
+  section: string
+  order: number
+  outline?: DocsPage['outline']
+  sourceAliases?: string[]
+}): DocsPage {
+  return {
+    locale: 'root',
+    contentLocale: page.contentLocale,
+    source: page.source,
+    route: page.route,
+    label: page.label,
+    sidebar: page.sidebar,
+    section: page.section,
+    order: page.order,
+    ...(page.outline === undefined ? {} : { outline: page.outline }),
+    ...(page.sourceAliases === undefined ? {} : { sourceAliases: page.sourceAliases }),
+  }
+}
+
 function mirroredPages(pages: MirroredPage[]): DocsPage[] {
-  return pages.flatMap(page => (['root', 'en'] as const).map((locale) => {
+  return pages.map((page) => {
     const aliases = page.sourceAliases === undefined
       ? undefined
-      : Array.isArray(page.sourceAliases) ? page.sourceAliases : page.sourceAliases[locale]
-    return {
-      locale,
-      contentLocale: localized(page.contentLocale, locale),
-      source: localized(page.source, locale),
-      route: locale === 'root' ? page.route : `en/${page.route}`,
-      label: page.label[locale],
-      sidebar: page.sidebar[locale],
-      section: page.section[locale],
+      : Array.isArray(page.sourceAliases) ? page.sourceAliases : page.sourceAliases.en
+    return englishPage({
+      source: localized(page.source, 'en'),
+      route: page.route,
+      contentLocale: localized(page.contentLocale, 'en'),
+      label: page.label.en,
+      sidebar: page.sidebar.en,
+      section: page.section.en,
       order: page.order,
       ...(page.outline === undefined ? {} : { outline: page.outline }),
       ...(aliases === undefined ? {} : { sourceAliases: aliases }),
-    }
-  }))
+    })
+  })
 }
 
 function pairedPages(pages: PairedPage[]): DocsPage[] {
-  return mirroredPages(pages.map((page) => {
-    const chineseSource = page.source.replace(/\.md$/, '.zh.md')
-    const sharedAliases = page.sourceAliases ?? []
-    return {
-      ...page,
-      source: { root: chineseSource, en: page.source },
-      contentLocale: { root: 'zh-CN', en: 'en-US' },
-      sourceAliases: {
-        root: [...sharedAliases, page.source],
-        en: [...sharedAliases, chineseSource],
-      },
-    }
+  return pages.map(page => englishPage({
+    source: page.source,
+    route: page.route,
+    contentLocale: 'en-US',
+    label: page.label.en,
+    sidebar: page.sidebar.en,
+    section: page.section.en,
+    order: page.order,
+    ...(page.outline === undefined ? {} : { outline: page.outline }),
+    ...(page.sourceAliases === undefined ? {} : { sourceAliases: page.sourceAliases }),
   }))
 }
 
@@ -466,7 +488,7 @@ const reference = [
  * sequence, so a new collection lands in both surfaces together.
  */
 export const localeCollections = {
-  root: ['zh-guide', 'zh-develop', 'zh-reference'],
+  root: ['en-guide', 'en-develop', 'en-reference'],
   en: ['en-guide', 'en-develop', 'en-reference'],
 } as const satisfies Record<DocsLocale, readonly DocsSidebar[]>
 
@@ -486,16 +508,16 @@ export interface DocsSection {
  */
 const sections: Record<DocsLocale, readonly DocsSection[]> = {
   root: [
-    { label: '入门' }, { label: 'SDK' }, { label: '自动化' }, { label: '集成' },
-    { label: '基础' }, { label: '框架能力' }, { label: '实战' }, { label: 'Cordis 框架教程' },
-    { label: '概念' }, { label: '生成参考' }, { label: 'Cordis API' }, { label: '开发手册' },
-    { label: '总览' },
-    { label: '内核与作用域', collapsed: true },
-    { label: '会话与持久化', collapsed: true },
-    { label: '模型与上下文', collapsed: true },
-    { label: '执行与工具', collapsed: true },
-    { label: '策略与交互', collapsed: true },
-    { label: '平台与接入', collapsed: true },
+    { label: 'Guide' }, { label: 'SDK' }, { label: 'Automation' }, { label: 'Integrations' },
+    { label: 'Basics' }, { label: 'Framework' }, { label: 'Practice' }, { label: 'Cordis framework tutorial' },
+    { label: 'Concepts' }, { label: 'Generated reference' }, { label: 'Cordis Core API' }, { label: 'Cookbook' },
+    { label: 'Overview' },
+    { label: 'Core and scopes', collapsed: true },
+    { label: 'Sessions and persistence', collapsed: true },
+    { label: 'Model and context', collapsed: true },
+    { label: 'Execution and tools', collapsed: true },
+    { label: 'Policy and interaction', collapsed: true },
+    { label: 'Platform and access', collapsed: true },
   ],
   en: [
     { label: 'Guide' }, { label: 'SDK' }, { label: 'Automation' }, { label: 'Integrations' },
