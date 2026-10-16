@@ -171,6 +171,8 @@ pnpm run dev:desktop     # build, then launch Desktop
 
 Arguments after a Web command reach `dsh web`, for example `pnpm run dev:web --no-open --port 3081`; `dev:web` also accepts `--skip-build` to reuse the existing artifact tree and `--no-serve` to run only the rebuild watchers beside a server started elsewhere. Both Web commands use the normal Harness home, while the Desktop commands use the isolated development home described in the [Desktop README](../apps/desktop/README.md). The root `Makefile` names the same commands as `make web`, `make dev-web`, `make desktop`, `make dev-desktop`, and `make build`; `ARGS='--no-open'` forwards options.
 
+Packaging a macOS DMG is separate from `dev:desktop` and `start:desktop`. Run `pnpm run package:desktop:mac:arm64:unsigned` on Apple Silicon, or `pnpm run package:desktop:mac:x64:unsigned` on Intel macOS or Apple Silicon with Rosetta; each command must run on a Mac of the matching architecture. The [local unsigned DMG procedure](../apps/desktop/README.md#local-macos-dmg-without-release-signing) owns the output path and how to open the application.
+
 ### TODO markers
 
 Use one of three comment tags to flag known issues in the code, ordered by urgency:
