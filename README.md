@@ -1,26 +1,37 @@
-# DeepSeek Harness
+# Privacy-Harden DeepSeek Harness
 
-DeepSeek Harness (`dsh`) is an open-source agent harness developed by [DeepSeek AI](https://deepseek.com).
+This repository is a privacy fork of [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh`), the open-source agent harness from [DeepSeek AI](https://deepseek.com). The fork keeps the local coding agent and removes the tracking upstream can send off the machine: session content, plugin inventories, an installation id, and desktop analytics.
+
+Upstream can deliver that data to DeepSeek-operated endpoints. `DSH_TELEMETRY_DISABLED` there stops only the feedback-gated OpenTelemetry row. This fork refuses the send paths in source, so those reports do not leave the process. Model calls, tools, plugins, sessions, and the desktop shell stay.
 
 It is built on an **everything-is-a-plugin** architecture and powered by [Cordis](https://github.com/cordiverse/cordis), whose design is described in [_A Programming Paradigm for Spatiotemporal Composability_](https://arxiv.org/abs/2608.25512).
 
-Documentation: [https://deepseek-harness.github.io/deepseek-harness/](https://deepseek-harness.github.io/deepseek-harness/)
+Upstream documentation: [https://deepseek-harness.github.io/deepseek-harness/](https://deepseek-harness.github.io/deepseek-harness/)
 
-## Privacy hardening
+## What this fork removed
 
-This checkout refuses outbound telemetry, analytics, and DeepSeek reporting in source. The coding agent, tools, plugins, sessions, and desktop shell remain. The original product can send session content, plugin inventories, and an installation id to DeepSeek-operated endpoints. Setting `DSH_TELEMETRY_DISABLED` there disables only the feedback-gated OpenTelemetry row.
+The tracking removal is the commit `chore(egress): remove outbound data paths and GitHub Actions infrastructure`, applied on the tree that contains release `0.2.1-alpha.2`. From this checkout:
 
-| Original product | This checkout |
+```sh
+git log --grep='^chore(egress): remove outbound data paths' -1
+git show --stat "$(git log --grep='^chore(egress): remove outbound data paths' -1 --format=%H)"
+```
+
+That commit is the source of the behavior below. [PRIVACY_HARDENING.md](PRIVACY_HARDENING.md) lists each send site and the files to re-check when merging upstream. The decision record is [the privacy-hardening Agent Note](.agents/notes/implemented/architecture/2026-10-12-privacy-hardening.md).
+
+| Upstream | This fork |
 | --- | --- |
-| After explicit feedback, OpenTelemetry posts session events and an anonymous user id to `dsh-otel-collector.deepseeksvc.com`. | Log exporters throw `Outbound reporting is disabled` before an HTTP client exists. The base profile defaults to `DISABLED` and configures no collector URL. |
-| Desktop analytics can post interaction events to that collector and can attach `device_id` and `user_id` from a signed-in account. | Product analytics keeps each event on this machine, without reading account identity or exporting it. |
-| Official DeepSeek model requests can carry `dsh_session_log` and `dsh_plugin_packages`, including prompts and tool output. | Those packages stay loaded so existing compositions and old session events still open, and they add no request fields. Settings has no session-log upload switch. |
+| After explicit feedback, OpenTelemetry posts session events and an anonymous user id to `dsh-otel-collector.deepseeksvc.com`. | Log and event exporters throw `Outbound reporting is disabled` before an HTTP client exists. The `@opentelemetry/*` and `got` dependencies are gone from the telemetry packages. The base profile defaults to `DISABLED` and configures no collector URL. |
+| Desktop analytics can post interaction events to that collector and can attach `device_id` and `user_id` from a signed-in account. | Product analytics keeps each event on this machine, without reading account identity or calling an exporter. |
+| Official DeepSeek model requests can carry `dsh_session_log` and `dsh_plugin_packages`, including prompts and tool output. | `session-log-deepseek` and `plugin-package-inventory-deepseek` stay mounted so existing compositions and old session events still open, and they add no request fields. Settings has no session-log upload switch. |
 | Official requests send `x-deepseek-harness-user-id`, `x-deepseek-harness-session-id`, and `x-deepseek-harness-compact`. | Those headers stay unset. Shipped profiles do not create `$DSH_HOME/.anonymous-user-id`. |
-| The `/feedback` acknowledgement can include the anonymous user id. | The acknowledgement names the session id only. |
+| The `/feedback` acknowledgement can include the anonymous user id. | The acknowledgement names the session id only. Feedback stays in the local session log. |
 | Desktop polls an update feed in the background and can check a mandatory-update policy at launch. | Those automatic checks run only when `DSH_DESKTOP_UPDATES=1`. A check you start yourself can still contact the update feed. |
 | Application `fetch` can reach the collector host. | Profile startup rejects `fetch` to `dsh-otel-collector.deepseeksvc.com` before a socket opens. The error names that host only. |
 
-Local JSONL sessions, crash logs, tools, plugins, streaming, and tool calling stay. A self-hosted OpenAI-compatible server, including SGLang, is a custom provider with API protocol `openai-completions`, as described in the [providers guide](docs/user/guide/providers.md). The Windows installer from this checkout is unsigned, and Windows SmartScreen warns because it has no code-signing certificate. The reporting guard covers `globalThis.fetch` in the harness process; shell, git, package managers, MCP children, `node:http`, and Electron's updater are outside it. Send sites and merge points are in [PRIVACY_HARDENING.md](PRIVACY_HARDENING.md).
+The same commit deletes every GitHub Actions workflow file from this tree. Those files are the repository's CI definitions.
+
+Local JSONL sessions, crash logs, tools, plugins, streaming, and tool calling stay. A self-hosted OpenAI-compatible server, including SGLang, is a custom provider with API protocol `openai-completions`, as described in the [providers guide](docs/user/guide/providers.md). The Windows installer from this checkout is unsigned, and Windows SmartScreen warns because it has no code-signing certificate. The reporting guard covers `globalThis.fetch` in the harness process; shell, git, package managers, MCP children, `node:http`, and Electron's updater are outside it.
 
 ## Developer preview
 
@@ -31,6 +42,8 @@ Review the [safety notice](SAFETY.md) before running the project.
 ## Run
 
 ### Run from `npm`
+
+`npx @deepseek-ai/dsh` installs the published upstream package. That package still includes the tracking this fork removes. Use the source checkout below for the privacy behavior.
 
 Install `Node.js`, then run:
 
@@ -45,8 +58,8 @@ The command starts the Web UI at `http://127.0.0.1:3080` by default and opens it
 To run from a repository checkout:
 
 ```sh
-git clone https://github.com/deepseek-ai/deepseek-harness.git
-cd deepseek-harness
+git clone https://github.com/mockcomic/Privacy-Harden-DeepSeek-Harness.git
+cd Privacy-Harden-DeepSeek-Harness
 pnpm install
 pnpm run build
 pnpm dsh web

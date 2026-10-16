@@ -1,0 +1,168 @@
+name: Dist builds
+
+# Build dist-exe for every shipped runtime target on master, and the
+# unsigned Desktop AppImage on each Linux architecture.
+# Runtime targets match python/sdk-runtime/platforms.json.
+on:
+  push:
+    branches: [master]
+
+concurrency:
+  group: dist-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  DSH_TELEMETRY_DISABLED: '1'
+  DSH_BUILD_CLIENT_PROFILE: official
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: node24-linux-x64
+            runner: ubuntu-24.04
+          - target: node24-linux-arm64
+            runner: ubuntu-24.04-arm
+          - target: node24-macos-arm64
+            runner: macos-15
+          - target: node24-macos-x64
+            runner: macos-15-intel
+          - target: node24-win-x64
+            runner: windows-2025
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v5.0.0
+        with:
+          dest: ${{ runner.temp }}/setup-pnpm-js-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+
+      - name: Enable Windows Developer Mode (symlink support)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: >-
+          reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock"
+          /t REG_DWORD /f /v "AllowDevelopmentWithoutDevLicense" /d "1"
+
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - uses: actions/cache@v6.1.0
+        with:
+          path: ~/.pkg-cache
+          key: pkg-fetch-${{ matrix.target }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            pkg-fetch-${{ matrix.target }}-
+
+      - name: Install (immutable)
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            if pnpm install --frozen-lockfile; then exit 0; fi
+            [ "$attempt" -lt 3 ] && sleep 10
+          done
+          exit 1
+
+      # Hosted Ubuntu is newer than manylinux 2.28. Rebuild pty.node inside
+      # that image so the Linux executable stays within the wheel's glibc floor.
+      - name: Rebuild Linux node-pty against manylinux 2.28
+        if: runner.os == 'Linux'
+        env:
+          RUNNER_ARCH: ${{ runner.arch }}
+        run: |
+          set -euo pipefail
+          case "$RUNNER_ARCH" in
+            X64) image=quay.io/pypa/manylinux_2_28_x86_64 ;;
+            ARM64) image=quay.io/pypa/manylinux_2_28_aarch64 ;;
+            *) echo "::error::Unsupported Linux runner architecture $RUNNER_ARCH"; exit 1 ;;
+          esac
+          addon_dir="$(realpath packages/subprocess/subprocess-local/node_modules/node-pty)"
+          pnpm_setup_root="$(realpath "$(dirname "$(dirname "$PNPM_HOME")")")"
+          (cd "$addon_dir" && npm_config_build_from_source=true pnpm --config.verifyDepsBeforeRun=false run install)
+          addon="$addon_dir/build/Release/pty.node"
+          [ -f "$addon_dir/build/Makefile" ] || {
+            echo "::error::node-pty install did not generate $addon_dir/build/Makefile"
+            exit 1
+          }
+          docker run --rm \
+            --user "$(id -u):$(id -g)" \
+            -v "$PWD:$PWD" \
+            -v "$HOME/.cache/node-gyp:$HOME/.cache/node-gyp:ro" \
+            -v "$pnpm_setup_root:$pnpm_setup_root:ro" \
+            -w "$addon_dir" \
+            "$image" \
+            bash -euxo pipefail -c \
+              'rm -rf build/Release && make -C build -j2 BUILDTYPE=Release'
+          [ -f "$addon" ] || { echo "::error::$addon missing after manylinux rebuild"; exit 1; }
+
+      - name: Build dist-exe
+        run: pnpm exec tsx scripts/build-exe-for-python-sdk.ts --targets=${{ matrix.target }}
+
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: dist-exe-${{ matrix.target }}
+          path: dist-exe/
+          if-no-files-found: error
+          retention-days: 7
+
+  appimage:
+    name: appimage-${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: ubuntu-24.04
+            script: package:desktop:linux:x64
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            script: package:desktop:linux:arm64
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v5.0.0
+        with:
+          dest: ${{ runner.temp }}/setup-pnpm-js-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install (immutable)
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            if pnpm install --frozen-lockfile; then exit 0; fi
+            [ "$attempt" -lt 3 ] && sleep 10
+          done
+          exit 1
+
+      # appimagetool is itself an AppImage. Hosted runners have no FUSE, so
+      # extract and run it instead of mounting it.
+      - name: Package unsigned AppImage
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: '1'
+        run: pnpm run ${{ matrix.script }}
+
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: appimage-linux-${{ matrix.arch }}
+          path: apps/desktop/.desktop-build/targets/linux-${{ matrix.arch }}/unsigned-artifacts/*.AppImage
+          if-no-files-found: error
+          retention-days: 7
