@@ -40,7 +40,7 @@ function harness(config: Config = {}, revoked?: AbortSignal) {
   const adapter = new DeepSeekAdapter({
     options: () => resolveAdapterOptions(Object.assign({ baseURL: 'https://gateway.example/custom' }, config)),
     resolveAuth: async () => ({ headers: { 'x-api-key': 'test-key' }, ...revoked === undefined ? {} : { revoked } }),
-    resolveUserId: () => 'test-user' as AnonymousUserId, resolveAttachments: () => attachments,
+    resolveAttachments: () => attachments,
     resolveImageAccess: () => ({ readonlyPath: '/workspace/image.png' }), resolveFiles: () => files, prepareExtensions: prepare,
   })
   return { adapter, ensureUploaded, invalidate, readImageRequest, prepare }

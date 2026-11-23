@@ -360,9 +360,22 @@ export async function installProxyFromEnvironment(
   report: (message: string) => void,
   options: DispatcherOptions = {},
 ): Promise<() => Promise<void>> {
-  const { policy, diagnostics } = resolveProxyPolicy(env)
-  for (const diagnostic of diagnostics) report(diagnostic.message)
-  return await installGlobalProxy(policy, options)
+  const restoreFetch = installReportingFetchGuard()
+  try {
+    const { policy, diagnostics } = resolveProxyPolicy(env)
+    for (const diagnostic of diagnostics) report(diagnostic.message)
+    const restoreProxy = await installGlobalProxy(policy, options)
+    return async () => {
+      try {
+        await restoreProxy()
+      } finally {
+        restoreFetch()
+      }
+    }
+  } catch (error) {
+    restoreFetch()
+    throw error
+  }
 }
 
 /**

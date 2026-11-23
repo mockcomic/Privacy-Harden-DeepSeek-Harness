@@ -136,8 +136,6 @@ export interface DeepSeekAdapterOptions<Connection extends DeepSeekConnectionOpt
    * credential for the route's own endpoint; omission reports `MISSING_CREDENTIAL`.
    */
   missingCredential?: (connection: Connection, provider: string) => LlmError
-  /** Resolve the harness-home anonymous id shared with telemetry and feedback. */
-  resolveUserId: () => AnonymousUserId
   /** Resolve the current durable attachment service; absence rejects image input. */
   resolveAttachments?: () => AttachmentStore | undefined
   /** Bridge one attachment reference into the current model-tool execution world. */

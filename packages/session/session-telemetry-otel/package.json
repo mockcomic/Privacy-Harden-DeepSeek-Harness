@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-session-telemetry-otel",
   "description": "Feedback-authorized Session logs over byte-bounded OpenTelemetry HTTP requests",
-  "version": "0.2.3-alpha.2",
+  "version": "0.2.1-alpha.2",
   "publishConfig": {
     "access": "public"
   },
@@ -19,20 +19,14 @@
       "default": "./lib/index.js"
     },
     "./src/*": "./src/*",
-    "./package.json": "./package.json",
-    "./locale/*.json": "./locale/*.json"
+    "./package.json": "./package.json"
   },
   "files": [
-    "locale/*.json",
     "lib/index.js",
-    "lib/types/**/*.d.ts",
-    "lib/types/**/*.d.ts.map",
-    "lib/**/*.js.map",
-    "src"
+    "lib/types/**/*.d.ts"
   ],
   "license": "MIT",
   "dependencies": {
-    "@opentelemetry/api-logs": "0.222.0",
     "@deepseek-ai/schemastery": "workspace:~"
   },
   "peerDependencies": {
@@ -44,7 +38,6 @@
     "@deepseek-ai/dsh-otel": "workspace:*"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh-brand": "workspace:*",
     "@deepseek-ai/cordis-plugin-logger-console": "workspace:~",
     "@deepseek-ai/cordis-plugin-loader": "workspace:~",
     "@deepseek-ai/dsh-anonymous-user-id": "workspace:*",

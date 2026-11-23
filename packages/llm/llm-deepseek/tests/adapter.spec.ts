@@ -1,7 +1,6 @@
 /** HTTP lifecycle, routing and optional Cordis services under real composition. */
 import * as NativeToolExecutor from '@deepseek-ai/dsh-tool-executor-native'
 import { accountStub } from '../../../account/deepseek-account/tests/account-stub.ts'
-import type { AnonymousUserId } from '@deepseek-ai/dsh-anonymous-user-id'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -202,8 +201,7 @@ describe('direct Messages HTTP', () => {
     const files = new DeepSeekFileStore()
     const llm = new DeepSeekAdapter({
       options: () => resolveAdapterOptions({ baseURL: source.url }),
-      resolveAuth: () => Promise.resolve({ headers: { 'x-api-key': 'test-key' } }), resolveUserId: () => 'test-user' as AnonymousUserId,
-      resolveAttachments: () => undefined, resolveImageAccess: () => undefined, resolveFiles: () => files,
+      resolveAuth: () => Promise.resolve({ headers: { 'x-api-key': 'test-key' } }), resolveAttachments: () => undefined, resolveImageAccess: () => undefined, resolveFiles: () => files,
       prepareExtensions: prepare,
     })
     const error = await chunks(llm.stream(options())).catch((cause: unknown) => cause)
