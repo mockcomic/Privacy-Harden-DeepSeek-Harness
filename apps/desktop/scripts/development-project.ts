@@ -38,7 +38,7 @@ export interface DevelopmentProjectOptions {
   /** Release identity written into the disposable project metadata. */
   readonly release: DesktopRelease
   /** Build target whose prepared payload the disposable project runs against. */
-  readonly target: DesktopBuildTarget
+  readonly target: DesktopAutoUpdateTarget
 }
 
 function readManifest(path: string): PackageManifest {

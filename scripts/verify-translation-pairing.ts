@@ -1,20 +1,70 @@
 /**
- * Reject Simplified Chinese documentation artifacts. Repository documentation
- * is English only: no `*.zh.md` counterparts and no `*.i18n.yaml` pairing records.
+ * Enforce complete English/Chinese pairs, matching structure, and recorded
+ * per-section hashes for every in-scope document. The manifest contains only explicit
+ * exclusions, which may have neither a counterpart nor a sidecar.
+ * `--list` reports state; `--write <pairs...>` records the named confirmed
+ * pairs (`--write --all` records every complete pair); `--cached <pairs...>`
+ * checks exact index bytes for hooks. A check or write named with pair paths
+ * touches only those pairs, so update iteration does not pay for a corpus
+ * scan. Translation quality remains a review responsibility.
+ * See `docs/i18n/README.md` for the owning contract.
  */
 
-import { globSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { existsSync, globSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { basename, join, resolve, sep } from 'node:path'
+import { gitIndexPaths, readGitIndexBlob } from './translation-pairing-git.ts'
+import {
+  computeTranslationPairingRecord,
+  parseTranslationPairingRecord,
+  renderTranslationPairingRecord,
+  translationPairingRecordDiff,
+  translationPairPaths,
+} from './translation-pairing-record.ts'
+import {
+  languageSwitcherTargets,
+  parseTranslationMarkdown,
+  parseTranslationPairingCliArgs,
+  parseTranslationPairingManifest,
+  generatedRegions,
+  requiresSourceLanguageSwitcher,
+  isTranslationPairingManifestExcluded,
+  isTranslationScopeFile,
+  TRANSLATION_SCOPE_GLOB_EXCLUDES,
+  translationPairSourcePredicate,
+  translationStructureDiff,
+  translationStructureSignature,
+} from './translation-pairing.ts'
+import {
+  hasLanguageSwitcher,
+  normalizeTranslationMarkdownLinks,
+  translationLinkLocaleViolations,
+} from './translation-links.ts'
 
 const root = resolve(import.meta.dirname, '..')
-const found = ['**/*.zh.md', '**/*.i18n.yaml']
-  .flatMap(pattern => globSync(pattern, { cwd: root, exclude: ['**/node_modules/**', '**/vendor/**'] }))
-  .sort()
+let request: ReturnType<typeof parseTranslationPairingCliArgs>
+try {
+  request = parseTranslationPairingCliArgs(process.argv.slice(2))
+} catch (error) {
+  console.error(`verify-translation-pairing: ${error instanceof Error ? error.message : String(error)}`)
+  process.exit(2)
+}
+const listMode = request.mode === 'list'
+const writeMode = request.mode === 'write'
+const indexMode = request.input === 'index'
+const indexFiles = indexMode ? gitIndexPaths(root) : undefined
 
-if (found.length > 0) {
-  console.error('verify-translation-pairing: documentation is English only; remove:')
-  for (const file of found) console.error(`  ${file}`)
-  process.exit(1)
+const contentCache = new Map<string, Buffer | undefined>()
+
+/** Read one repository path from the selected worktree or index plane. */
+function readRepositoryFile(file: string): Buffer | undefined {
+  if (contentCache.has(file)) return contentCache.get(file)
+  const content = indexMode
+    ? indexFiles?.has(file) ? readGitIndexBlob(root, file) : undefined
+    : existsSync(join(root, file)) && statSync(join(root, file)).isFile()
+      ? readFileSync(join(root, file))
+      : undefined
+  contentCache.set(file, content)
+  return content
 }
 
 /** Whether one path exists in the selected content plane. */

@@ -5,6 +5,7 @@ import { onTestFinished } from 'vitest'
 import { SlotTestRuntime } from '@deepseek-ai/dsh-client-test-runtime'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { en as commonEn } from '@deepseek-ai/dsh-client-locale/src/locales/en.ts'
+import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { PropsRenderFactories, PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
@@ -26,8 +27,8 @@ export async function createReasoningRenderFixture(language = 'zh') {
   onTestFinished(() => runtime.dispose())
   const locale = new LocaleRuntime(runtime.ctx)
   runtime.ctx.provide('locale', locale)
-  locale.register('common', { en: commonEn })
-  locale.register(NS, { en })
+  locale.register('common', { en: commonEn, zh: commonZh })
+  locale.register(NS, { en, zh })
   locale.setLocale(language)
   runtime.slots.installLocale(locale)
   const captured: { seats?: RenderSeats; setContent?: (content: ReactNode) => void } = {}

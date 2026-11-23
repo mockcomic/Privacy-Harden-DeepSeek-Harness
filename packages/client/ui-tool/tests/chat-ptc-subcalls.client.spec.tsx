@@ -141,7 +141,7 @@ async function bench(snapshot: ChatSnapshot) {
   runtime.remote.provideNamespaces({ session: { openWorkspacePath } })
   const locale = new LocaleRuntime(ctx)
   ctx.provide('locale', locale)
-  locale.register(CONVERSATION_NS, { en: conversationEn })
+  locale.register(CONVERSATION_NS, { zh: conversationZh, en: conversationEn })
   runtime.slots.installLocale(locale)
   runtime.ctx.provide('shortcuts', { catalog: createSnapshotStore([]) })
   await runtime.mount({ inject: [...injectMenus], apply: applyMenus }, syncedConfig({ resolutionTimeoutMs: 1000 }))
