@@ -1,15 +1,14 @@
 import { createServer } from 'node:http'
 import { once } from 'node:events'
-import { afterEach, expect, it } from 'vitest'
-import { Context } from '@deepseek-ai/cordis'
-import { SessionId, SessionSeq } from '@deepseek-ai/dsh-session'
-import OTel from '../src/index.ts'
-import { createLogExporter, OUTBOUND_REPORTING_DISABLED } from '../src/transport.ts'
-import {
-  resolveSessionLogLimits,
-  SESSION_LOG_MAX_REQUEST_BYTES,
-  type SessionLogRecord,
-} from '../src/session-log.ts'
+import { gunzipSync } from 'node:zlib'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import type { MeterProvider } from '@opentelemetry/api'
+import { CompressionAlgorithm } from '@opentelemetry/otlp-exporter-base'
+import { JsonLogsSerializer } from '@opentelemetry/otlp-transformer'
+import { type SessionId, SessionSeq } from '@deepseek-ai/dsh-session'
+import { SESSION_LOG_MAX_REQUEST_BYTES, type SessionLogProcessorOptions, type SessionLogRecord, type SessionLogOptions } from '../src/session-log.ts'
+import type { LogExporterOptions } from '../src/transport.ts'
+import { brandString } from '@deepseek-ai/dsh-brand'
 
 const cleanup: (() => Promise<void>)[] = []
 afterEach(async () => {
@@ -49,12 +48,11 @@ it('drops session logs locally and refuses the low-level exporter', async () => 
   const url = `http://127.0.0.1:${address.port}/v1/logs`
   expect(() => { createLogExporter({ url }) }).toThrow(OUTBOUND_REPORTING_DISABLED)
 
-  const ctx = new Context()
-  cleanup.push(() => ctx.fiber.dispose())
-  await ctx.plugin(OTel)
-  const record: SessionLogRecord = {
-    sessionId: SessionId('synthetic-session'),
-    event: { type: 'user/message', seq: SessionSeq(0), time: 1, data: { text: 'local only' } },
+function sessionRecord(text: string, seq = 0): SessionLogRecord {
+  return {
+    sessionId: brandString<SessionId>('synthetic-session'),
+    event: { type: 'user/message', seq: SessionSeq(seq), time: 1_800_000_000_000, surfaceOp: 'append',
+      data: { content: [{ type: 'text', text }], nested: { items: [null, true, false, 0, 1.5, { text }] } } },
   }
   const sessionLogs = ctx.otel.createSessionLogReporter({
     exporter: { url },

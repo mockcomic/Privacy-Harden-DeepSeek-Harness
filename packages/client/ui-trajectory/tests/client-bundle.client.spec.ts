@@ -17,7 +17,15 @@ import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 
 const PLUGIN_ID = '@deepseek-ai/dsh-client-ui-trajectory'
 
-interface Handoff { id: string; factory: (require: (spec: string) => unknown) => Record<string, unknown> }
+interface Handoff {
+  id: string
+  factory: (require: (spec: string) => unknown) => Record<string, unknown>
+  meta?(): {
+    stylesheets?: Readonly<Record<string, {
+      text(context: { asset(reference: string): string }): string
+    }>>
+  }
+}
 type Win = { __ModuleLoader__?: { load(h: Handoff): void } }
 
 function readBundle(): string | undefined {
@@ -50,6 +58,7 @@ describe('tsdown client artifact', () => {
       ['react', await import('react')],
       ['react/jsx-runtime', await import('react/jsx-runtime')],
       ['react-dom', await import('react-dom')],
+      ['@tanstack/react-virtual', await import('@tanstack/react-virtual')],
       ['@deepseek-ai/dsh-client-store', await import('@deepseek-ai/dsh-client-store')],
       ['@deepseek-ai/dsh-client-ui-conversation/client', await import('@deepseek-ai/dsh-client-ui-conversation/client')],
       ['@deepseek-ai/dsh-client-ui-primitives', await import('@deepseek-ai/dsh-client-ui-primitives')],
@@ -66,7 +75,7 @@ describe('tsdown client artifact', () => {
     expect(handoff.id).toBe(PLUGIN_ID)
     expect(exports.apply).toBeTypeOf('function')
     expect(exports.inject).toEqual([
-      'slots', 'sessions', 'uiSession', 'uiConversation', 'locale',
+      'slots', 'sessions', 'uiSession', 'uiConversation', 'locale', 'remote', 'remote.toolResults',
     ])
   })
 
@@ -91,6 +100,7 @@ describe('tsdown client artifact', () => {
     const { events, views } = uiConversation
     ctx.provide('connection', { api: { settings: {} }, isLoopback: false } as never)
     ctx.provide('remote', { $on: () => () => {} } as never)
+    ctx.provide('remote.toolResults', {})
     ctx.provide('configForms', { developerTools: { enabled: createSnapshotStore(true) }, get: () => stubConfigForm().scope } as never)
     const locale = await import('@deepseek-ai/dsh-client-locale/client')
     await ctx.plugin({ inject: [...locale.inject], apply: locale.apply })
@@ -105,9 +115,23 @@ describe('tsdown client artifact', () => {
     expect(views.entries()).toEqual([])
   })
 
-  it.skipIf(code === undefined)('injects plugin-tagged module CSS during factory execution', async () => {
-    await loadArtifact()
-    const tags = document.querySelectorAll(`style[data-plugin=${JSON.stringify(PLUGIN_ID)}]`)
-    expect(tags.length).toBeGreaterThan(0)
+  it.skipIf(code === undefined)('provides stylesheet text through metadata without injecting it during factory execution', async () => {
+    const before = [...document.querySelectorAll('style')]
+    const { handoff } = await loadArtifact()
+    expect([...document.querySelectorAll('style')]).toEqual(before)
+    expect(typeof handoff.meta).toBe('function')
+    const stylesheets = handoff.meta!().stylesheets
+    expect(stylesheets).toBeDefined()
+    const resources = Object.entries(stylesheets!)
+    expect(resources.length).toBeGreaterThan(0)
+    for (const [path, stylesheet] of resources) {
+      expect(path).toMatch(/^src\/client\/.+\.css$/u)
+      expect(typeof stylesheet.text).toBe('function')
+      const text = stylesheet.text({ asset: reference => reference })
+      expect(text).toBeTypeOf('string')
+      expect(text.trim().length).toBeGreaterThan(0)
+      expect(text).toMatch(/\{[^}]+\}/)
+    }
+    expect([...document.querySelectorAll('style')]).toEqual(before)
   })
 })

@@ -202,8 +202,11 @@ export function loadPersistenceReleases(root: string): PersistenceReleases {
   const roots = new Map<string, PersistenceRoot>()
   for (const release of manifest.releases) {
     const read = (suffix: string): string => readFileSync(join(directory, release.tag + suffix), 'utf8').replaceAll('\r\n', '\n')
-    const record = parseRecord(machineBlock(read('.md'), `${release.tag}.md`), release, entries.at(-1)?.release.tag ?? null)
-    const snapshot = parseHistoricalPersistenceSnapshot(JSON.parse(read('.schema.json')))
+    const english = machineBlock(read('.md'), `${release.tag}.md`)
+    const chinese = machineBlock(read('.zh.md'), `${release.tag}.zh.md`)
+    if (english !== chinese) throw new Error(`${release.tag}: bilingual machine records differ`)
+    const record = parseRecord(english, release, entries.at(-1)?.release.tag ?? null)
+    const snapshot = parseHistoricalPersistenceSnapshot(read('.schema.json'))
     validateTypes(snapshot, release.tag)
     const afterRoots = new Map(snapshot.roots.map(root => [root.key, root]))
     const expectedRoots = record.changes.filter(change => change.after !== null).map(change => change.root).sort()

@@ -345,6 +345,35 @@ def test_snapshot_value_scrubs_system_nodes_without_erasing_header_fields() -> N
     assert normalize(empty, []) == empty
 
 
+def test_snapshot_system_sections_preserve_separators_and_attribution() -> None:
+    source = {"kind": "system-prompt", "sections": [
+        {"name": "active", "order": 0, "state": "active", "contentIndex": 1},
+        {"name": "retired", "order": 1, "state": "retired", "contentIndex": 3},
+    ]}
+    system = {
+        "type": "system/message",
+        "data": {"message": {
+            "role": "system",
+            "content": [
+                {"type": "text", "text": "notice\n\n"},
+                {"type": "text", "text": "prompt"},
+                {"type": "text", "text": "\n\n"},
+                {"type": "text", "text": "retirement"},
+            ],
+            "source": source,
+        }},
+    }
+    normalized = SMOKE["normalize_snapshot_value"](system, [])
+    assert normalized["data"]["message"]["source"] == source
+    assert normalized["data"]["message"]["content"] == [
+        {"type": "text", "text": "{{system}}\n\n"},
+        {"type": "text", "text": "{{system}}"},
+        {"type": "text", "text": "\n\n"},
+        {"type": "text", "text": "{{system}}"},
+    ]
+    assert system["data"]["message"]["content"][1]["text"] == "prompt"
+
+
 def test_snapshot_value_preserves_deterministic_tool_repair_ids() -> None:
     normalize = SMOKE["normalize_snapshot_value"]
     repair = {
@@ -766,3 +795,20 @@ def test_live_turn_accepts_explanation_before_acknowledgement(prefix: str) -> No
 def test_live_turn_rejects_missing_standalone_acknowledgement(answer: str) -> None:
     with pytest.raises(AssertionError, match="turn returned"):
         SMOKE["assert_live_turn"]("create", live_result(final_response=answer))
+
+
+def test_job_snapshot_normalization_preserves_pairing_and_uncertainty():
+    normalize = SMOKE["normalize_snapshot_value"]
+    replacements = []
+    first = {"type": "job/registered", "data": {"jobId": "job-a", "startedAt": 10}}
+    last = {"type": "job/settled", "data": {"jobId": "job-a", "startedAt": 10,
+                                          "finishedAt": 20, "producerReported": False}}
+    other = {"type": "job/registered", "data": {"jobId": "job-b", "startedAt": 30}}
+    a, b, c = normalize([first, last, other], replacements)
+    assert a["data"] == {"jobId": "{{id:1}}", "startedAt": 0}
+    assert b["data"] == {"jobId": "{{id:1}}", "startedAt": 0, "finishedAt": 0, "producerReported": False}
+    assert c["data"]["jobId"] == "{{id:2}}"
+    assert normalize([a, b, c], []) == [a, b, c]
+    assert normalize({"type": "tool/result", "data": {"startedAt": 100, "finishedAt": 200}}, []) == {
+        "type": "tool/result", "data": {"startedAt": 100, "finishedAt": 200},
+    }

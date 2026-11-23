@@ -18,13 +18,12 @@ export function apply(ctx: Context, config: Config): void {
     agent.ctx.inject(ToolSubagent.inject, (runtimeCtx) => {
       ToolSubagent.apply(runtimeCtx, {
         provider: config.provider,
-        modelSelectionSettings: true,
+        modelSelection: true,
+        modelDiscovery: true,
         ...(config.toolName === undefined ? {} : { toolName: config.toolName }),
         ...(config.agentOptions === undefined ? {} : { agentOptions: config.agentOptions }),
-        ...(config.persona === undefined ? {} : { persona: config.persona }),
-        ...(config.toolFilter === undefined ? {} : { toolFilter: config.toolFilter }),
         ...(config.maxDepth === undefined ? {} : { maxDepth: config.maxDepth }),
-      }, agent.session)
+      })
     })
   }
   ctx.on('agent/created', ({ agent }) => { install(agent) })

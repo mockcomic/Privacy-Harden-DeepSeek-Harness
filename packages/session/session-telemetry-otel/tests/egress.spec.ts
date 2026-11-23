@@ -4,8 +4,9 @@ import { once } from 'node:events'
 import { afterEach, expect, it } from 'vitest'
 import { recordFeedback } from '@deepseek-ai/dsh-command-feedback'
 import { Context } from '@deepseek-ai/cordis'
-import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
+import SessionStore, { type SessionId } from '@deepseek-ai/dsh-session'
 import OpenTelemetrySessionBackend, { SessionTelemetryMode } from '../src/index.ts'
+import { brandString } from '@deepseek-ai/dsh-brand'
 
 const servers: Server[] = []
 afterEach(async () => {
@@ -33,17 +34,66 @@ it.each(['mock', 'deepseek-official', 'unknown-provider', undefined])(
     const address = server.address()
     if (address === null || typeof address === 'string') throw new Error('collector has no port')
 
-    const ctx = new Context()
-    ctx.plugin(OTel)
-    try {
-      await ctx.plugin(SessionStore)
-      const fiber = await ctx.plugin(OpenTelemetrySessionBackend, {
-        mode: SessionTelemetryMode.FEEDBACK_ONLY,
-        exporter: { url: `http://127.0.0.1:${address.port}/v1/logs` },
-      })
-      const session = ctx.sessions.create(SessionId('egress'), { meta: { cwd: process.cwd() } })
-      if (provider !== undefined) {
-        session.append('request/header', { header: { config: { provider, model: 'm' } }, reason: 'initial' })
+/** The launch environment of a user who exported one proxy for both schemes. */
+function proxyEnv(): { get(name: string): { value: string } | undefined } {
+  return { get: name => (name === 'HTTP_PROXY' || name === 'HTTPS_PROXY' ? { value: proxyUrl } : undefined) }
+}
+
+describe('session-telemetry-otel egress', () => {
+  it.each(['mock', 'deepseek-official', 'unknown-provider', undefined])(
+    'exports only explicit feedback directly for provider %s, ignoring the configured proxy',
+    async (provider) => {
+      seen.length = 0
+      captures.length = 0
+      const disposeProxy = await installProxyFromEnvironment(proxyEnv(), () => undefined)
+      const ctx = new Context()
+      ctx.plugin(OTel)
+      try {
+        // The positive control proves a fetch-based exporter would reach the proxy.
+        const response = await fetch(collectorUrl)
+        await response.text()
+        expect(response.status).toBe(502)
+        expect(seen.length).toBeGreaterThan(0)
+        seen.length = 0
+
+        await ctx.plugin(SessionStore)
+        const fiber = await ctx.plugin(OpenTelemetrySessionBackend, {
+          mode: SessionTelemetryMode.FEEDBACK_ONLY,
+          exporter: {
+            url: `${collectorUrl}/v1/logs`,
+            timeoutMillis: 1_000,
+            // Resolve only the SDK's collector connection, not the global fetch dispatcher.
+            httpAgentOptions: {
+              lookup: (_host, options, callback) => {
+                if (options.all) callback(null, [{ address: '127.0.0.1', family: 4 }])
+                else callback(null, '127.0.0.1', 4)
+              },
+            },
+          },
+          processor: { scheduledDelayMillis: 60_000 },
+        })
+        const session = ctx.sessions.create(brandString<SessionId>('egress'), { meta: { cwd: home } })
+        if (provider !== undefined) {
+          session.append('request/header', { header: { config: { provider, model: 'm' } }, reason: 'initial' })
+        }
+        session.append('turn/start', { turn: 1 })
+        recordFeedback(session, { text: 'explicit egress feedback' })
+        session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+        await fiber.dispose()
+
+        expect(captures).toHaveLength(1)
+        const wire = captures.join('')
+        expect(wire).toContain('explicit egress feedback')
+        expect(wire).toContain('turn/start')
+        expect(wire).not.toContain('turn/end')
+        expect(wire).not.toContain('telemetry.op')
+        expect(seen).toEqual([])
+      } finally {
+        try {
+          await ctx.fiber.dispose()
+        } finally {
+          await disposeProxy()
+        }
       }
       session.append('turn/start', { turn: 1 })
       recordFeedback(session, { text: 'explicit egress feedback' })

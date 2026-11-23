@@ -1,11 +1,11 @@
 import { mountWorkingDirectoryFixture } from '../../subagent/tests/working-directory-fixture.ts'
 import { mountLocalActivations, startTestActivation as start } from '../../subagent/tests/local-activation.ts'
-import { createUserMessage, type GenerateOptions } from '@deepseek-ai/dsh-llm'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { describe, expect, it } from 'vitest'
 import { Context, symbols, type EffectMeta } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import AgentRegistry, { type Agent } from '@deepseek-ai/dsh-agent'
-import { SessionId } from '@deepseek-ai/dsh-session'
+import type { SessionId } from '@deepseek-ai/dsh-session'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
@@ -13,7 +13,7 @@ import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import { MockAdapter, maxTokensResponse, textResponse, toolCallResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
 import * as spawn from '../src/index.ts'
 import { STRUCTURED_OUTPUT_TOOL } from '@deepseek-ai/dsh-subagent'
-import { defineContentToolFixture } from '@deepseek-ai/dsh-tools'
+import { brandString } from '@deepseek-ai/dsh-brand'
 
 type Script = ConstructorParameters<typeof MockAdapter>[0]
 
@@ -33,15 +33,13 @@ async function setup(script: Script) {
   await ctx.plugin(SubagentRuntime)
   await ctx.plugin(spawn, { providerName: 'spawn' })
   ctx.llm.registerAdapter(['mock'], adapter)
-  const parent = await ctx.agentLoop.create(SessionId('parent'), { provider: 'mock', model: 'mock' })
+  const parent = await ctx.agentLoop.create(brandString<SessionId>('parent'), { provider: 'mock', model: 'mock' })
   return { ctx, parent, adapter }
 }
 
 function text(blocks: readonly { type: string; text?: string }[]): string {
   return blocks.filter(b => b.type === 'text').map(b => b.text).join('')
 }
-
-
 
 /** Invoke the child lifecycle effect while its parent-owned setup is still unpublished. */
 function disposeChildLifecycle(parent: Agent): void {
@@ -52,14 +50,6 @@ function disposeChildLifecycle(parent: Agent): void {
     })
   if (lifecycle === undefined) throw new Error('child lifecycle effect not found')
   void lifecycle()
-}
-
-
-/** The system prompt a loop-built request carries as its leading system-role message ('' when none). */
-function systemPromptOf(request: GenerateOptions): string {
-  const head = request.messages[0]
-  if (head?.role !== 'system') return ''
-  return head.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('')
 }
 
 describe('dsh-subagent-spawn-in-process', () => {
@@ -142,7 +132,10 @@ describe('dsh-subagent-spawn-in-process', () => {
     const { ctx, parent } = await setup([])
     // parent is depth 0, child would be depth 1 — cap at 0 forbids any child.
     await expect(start(ctx, 'spawn', { prompt: [{ type: 'text', text: 'p' }], parent, maxDepth: 0 }))
-      .rejects.toThrow('subagent depth 1 exceeds maxDepth 0')
+      .rejects.toMatchObject({
+        name: 'SubagentDepthError', code: 'DEPTH_EXCEEDED', message: 'subagent depth 1 exceeds maxDepth 0',
+        attemptedDepth: 1, maxDepth: 0,
+      })
   })
 
   it('maps a child that hit its token ceiling to stopReason "max-tokens"', async () => {
@@ -229,7 +222,7 @@ describe('dsh-subagent-spawn-in-process', () => {
     expect(typeof provider.prepareContinuable).toBe('function')
     const spec = await provider.prepareContinuable!({
       cwd: process.cwd(),
-      sessionId: SessionId('continuable-child'),
+      sessionId: brandString<SessionId>('continuable-child'),
       parent,
       signal: new AbortController().signal,
     })
@@ -241,7 +234,7 @@ describe('dsh-subagent-spawn-in-process', () => {
     const { ctx } = await setup([textResponse('x')])
     // A parent WITH a cwd (config agents have none, so create one explicitly).
     const parentHandle = await ctx.agents.create({
-      sessionId: SessionId('cwd-parent-session'),
+      sessionId: brandString<SessionId>('cwd-parent-session'),
       meta: { cwd: '/tmp/parent-workspace' },
       agentOptions: { provider: 'mock', model: 'mock' },
     })
@@ -257,7 +250,7 @@ describe('dsh-subagent-spawn-in-process', () => {
     const { ctx } = await setup([textResponse('explicit model child')])
     // A parent with NO model (its own turns would need one supplied per-request).
     const parentHandle = await ctx.agents.create({
-      sessionId: SessionId('modelless-parent-session'),
+      sessionId: brandString<SessionId>('modelless-parent-session'),
       agentOptions: {},
     })
     // The request supplies the child's model explicitly.
@@ -278,23 +271,23 @@ describe('dsh-subagent-spawn-in-process', () => {
     const provider = ctx.subagents.getProvider('spawn')!
     expect(provider.capabilities).toEqual({
       agentOptions: true,
+      agentPreset: true,
       outputSchema: true,
       depthLimit: true,
-      toolFilter: true,
-      persona: true,
     })
   })
 
   it('unregisters the provider when its fiber is disposed (HMR safety)', async () => {
     const ctx = new Context()
     await ctx.plugin(SessionProjectionRegistry)
+
     await mountWorkingDirectoryFixture(ctx)
     await ctx.plugin(SubagentRuntime)
     await ctx.plugin(AgentRegistry)
     const fiber = await ctx.plugin(spawn, { providerName: 'spawn' })
-    expect(ctx.subagents.list()).toEqual(['spawn'])
+    expect(ctx.subagents.getProvider('spawn')).toBeDefined()
     await fiber.dispose()
-    expect(ctx.subagents.list()).toEqual([])
+    expect(ctx.subagents.getProvider('spawn')).toBeUndefined()
   })
 
   it('captures structured output through the shipped plugin (driver runtime, plugin wiring)', async () => {
@@ -324,7 +317,7 @@ describe('dsh-subagent-spawn-in-process', () => {
     await ctx.plugin(SubagentRuntime)
     const fiber = await ctx.plugin(spawn, { providerName: 'spawn' })
     ctx.llm.registerAdapter(['mock'], adapter)
-    const parent = await ctx.agentLoop.create(SessionId('parent'), { provider: 'mock', model: 'mock' })
+    const parent = await ctx.agentLoop.create(brandString<SessionId>('parent'), { provider: 'mock', model: 'mock' })
     const controller = new AbortController()
     const run = await start(ctx, 'spawn', {
       prompt: [{ type: 'text', text: 'q' }],
@@ -352,7 +345,7 @@ describe('dsh-subagent-spawn-in-process', () => {
     await mountWorkingDirectoryFixture(ctx)
     await ctx.plugin(SubagentRuntime)
     const fiber = await ctx.plugin(spawn, { providerName: 'spawn' })
-    const parent = await ctx.agentLoop.create(SessionId('parent'), { provider: 'mock', model: 'mock' })
+    const parent = await ctx.agentLoop.create(brandString<SessionId>('parent'), { provider: 'mock', model: 'mock' })
     const parentEffects = parent.ctx.fiber.getEffects().length
     const published: string[] = []
     ctx.on('session/created', () => void published.push('session/created'))
@@ -380,72 +373,11 @@ describe('dsh-subagent-spawn-in-process', () => {
     expect(typeof unwrapped.apply).toBe('function')
   })
 
-  describe('persona and toolFilter (the scoped child world)', () => {
-    it('a per-child persona shadows the deployment persona in the child request only', async () => {
-      const { ctx, parent, adapter } = await setup([
-        textResponse('parent answer'),
-        textResponse('child answer'),
-      ])
-      parent.followup(createUserMessage({ content: [{ type: 'text', text: 'hi' }], source: { kind: 'user' } }))
-      await parent.whenIdle()
-
-      const run = await start(ctx, 'spawn', {
-        prompt: [{ type: 'text', text: 'do X' }],
-        parent,
-        persona: 'You are the tersest test runner.',
-      })
-      await run.result
-      const childRequest = adapter.requests.at(-1)!
-      expect(systemPromptOf(childRequest)).toContain('You are the tersest test runner.')
-      // The parent's earlier request carried no such persona.
-      expect(systemPromptOf(adapter.requests[0]!)).not.toContain('tersest test runner')
-      await run.dispose()
-    })
-
-    it('toolFilter hides denied tools from the child prompt AND refuses their execution', async () => {
-      const { ctx, parent, adapter } = await setup([
-        // The child tries the denied tool anyway, then answers.
-        toolCallResponse('c1', 'forbidden_tool', {}),
-        textResponse('done'),
-      ])
-      ctx.tools.register(defineContentToolFixture({
-        name: 'forbidden_tool', description: 'global', parameters: {},
-        execute: () => Promise.resolve([{ type: 'text', text: 'ran' }]),
-      }))
-      const run = await start(ctx, 'spawn', {
-        prompt: [{ type: 'text', text: 'do X' }],
-        parent,
-        toolFilter: { deny: ['forbidden_tool'] },
-      })
-      const result = await run.result
-      expect(result.stopReason).toBe('completed')
-      // Not advertised…
-      const childRequest = adapter.requests[0]!
-      expect((childRequest.tools ?? []).map(t => t.name)).not.toContain('forbidden_tool')
-      // …and the attempted call executed as UNKNOWN_TOOL (visible in the log).
-      const child = run.localAgent
-      const toolResult = child.session.snapshotEvents().find(e => e.type === 'tool/result')!
-      expect(JSON.stringify(toolResult.data)).toContain('unknown tool')
-      await run.dispose()
-    })
-
-    it('an unknown toolFilter name fails the spawn loudly with no orphaned child', async () => {
-      const { ctx, parent } = await setup([])
-      const before = ctx.agents.list().length
-      await expect(start(ctx, 'spawn', {
-        prompt: [{ type: 'text', text: 'do X' }],
-        parent,
-        toolFilter: { deny: ['no_such_tool'] },
-      })).rejects.toThrow(/unknown global tool "no_such_tool"/)
-      expect(ctx.agents.list().length).toBe(before)
-    })
-  })
-
   it('spawning from a DISPOSING parent fails loud with no orphaned child (INACTIVE_EFFECT teaching error)', async () => {
     const { ctx } = await setup([])
     // A handle-owned parent we can dispose (config agents dispose with the loop fiber).
     const parentHandle = await ctx.agents.create({
-      sessionId: SessionId('doomed-s'),
+      sessionId: brandString<SessionId>('doomed-s'),
       agentOptions: { provider: 'mock', model: 'mock' },
     })
     await parentHandle.dispose()
@@ -466,7 +398,7 @@ describe('dsh-subagent-spawn-in-process', () => {
   it('parent disposal during the child setup transaction prevents every publication notification', async () => {
     const { ctx } = await setup([])
     const parentHandle = await ctx.agents.create({
-      sessionId: SessionId('setup-race-parent-session'),
+      sessionId: brandString<SessionId>('setup-race-parent-session'),
       agentOptions: { provider: 'mock', model: 'mock' },
     })
     const published: string[] = []

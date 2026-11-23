@@ -1,11 +1,13 @@
 /** Common paid requests and results survive Host restart without altering main conversation input. */
 import { createAssistantMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
-import { pluginRecordOf, SessionId, SessionSeq, type SessionEvent } from '@deepseek-ai/dsh-session'
-import JsonlPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
+import { pluginRecordOf, type SessionId, SessionSeq, type SessionEvent } from '@deepseek-ai/dsh-session'
+import type { SessionPersistence } from '@deepseek-ai/dsh-session-persistence'
+import type { JsonlHandleStorage } from '../../../session/session-persistence-jsonl/src/storage.ts'
 import { readFile } from 'node:fs/promises'
 import { setImmediate } from 'node:timers/promises'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { paidFixture } from './paid-fixture.ts'
+import { brandString } from '@deepseek-ai/dsh-brand'
 
 const cleanups: Array<() => Promise<void>> = []
 afterEach(async () => {
@@ -39,8 +41,8 @@ function historicalEvents(): SessionEvent[] {
 describe('common paid translation persistence', () => {
   it.each(['caller cancellation', 'provider deadline'] as const)(
     'keeps a pending result ahead of an immediate retry after %s without billing again', async (interruption) => {
-      const b = await paidFixture(cleanups, { translator: { deepseekTimeoutMs: 60_000 } }), backend = b.ctx.sessionPersistence
-      if (!(backend instanceof JsonlPersistence)) throw new Error('Expected the real JSONL backend')
+      const b = await paidFixture(cleanups, { translator: { deepseekTimeoutMs: 60_000 } }), backend = b.ctx.sessionPersistence as SessionPersistence & Pick<JsonlHandleStorage, 'persistBatch'>
+      expect(typeof backend.persistBatch).toBe('function')
       const entered = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
       cleanups.push(async () => { release.resolve(undefined) })
       const persist = backend.persistBatch.bind(backend)
@@ -109,7 +111,7 @@ describe('common paid translation persistence', () => {
     })
 
   it.each(providers)('requires a live writer for uncached %s before preparation and retains independent input and result', async (provider) => {
-    const id = SessionId('historical-paid-translation')
+    const id = brandString<SessionId>('historical-paid-translation')
     const b = await paidFixture(cleanups, { withSession: false, withSessionQuery: true })
     const original = await b.createHistorical(id, historicalEvents())
     await b.restart()
@@ -154,14 +156,14 @@ describe('common paid translation persistence', () => {
   it('refuses a missing historical Session before paid dispatch', async () => {
     const b = await paidFixture(cleanups, { withSession: false })
     await expect(b.ctx.translator.translate(b.ctx.translator.resolve({ provider: 'deepseek-official', text: 'source',
-      targetLanguage: 'zh', sessionId: SessionId('missing-historical') })))
+      targetLanguage: 'zh', sessionId: brandString<SessionId>('missing-historical') })))
       .rejects.toMatchObject({ code: 'TRANSLATION_SESSION_REQUIRED' })
     expect(b.requests).toEqual([])
     expect(b.ctx.sessions.list()).toEqual([])
   })
 
   it('does not claim a historical writer on a cache miss or dispatch paid work', async () => {
-    const b = await paidFixture(cleanups, { withSession: false }), original = await b.createHistorical(SessionId('owned-history'), historicalEvents())
+    const b = await paidFixture(cleanups, { withSession: false }), original = await b.createHistorical(brandString<SessionId>('owned-history'), historicalEvents())
     await using writer = await b.ctx.sessionPersistence.open(original.id, 'write')
     await expect(b.ctx.translator.translate(b.ctx.translator.resolve({ provider: 'deepseek-official', text: 'source',
       targetLanguage: 'zh', sessionId: original.id })))

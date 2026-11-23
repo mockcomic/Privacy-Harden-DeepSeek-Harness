@@ -19,16 +19,19 @@
         }
       },
       {
-        "name": "working_directory",
-        "description": "Read the current working directory, or change it with cd. Relative paths use the current directory. Existing shells and running processes keep their own directories.",
+        "name": "read_image",
+        "description": "Read a PNG/JPEG/WebP/GIF file and return the image itself. Large images are downscaled automatically; do not install image libraries or create thumbnails to inspect an image.",
         "input_schema": {
           "type": "object",
           "properties": {
-            "cd": {
+            "file_path": {
               "type": "string",
-              "description": "Existing directory to enter. Omit to read the current directory."
+              "description": "Path to the image file, resolved by the filesystem backend."
             }
-          }
+          },
+          "required": [
+            "file_path"
+          ]
         }
       }
     ],
@@ -42,7 +45,7 @@
           },
           {
             "type": "text",
-            "text": "Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\nCurrent working directory: \"{{cwd}}\"."
+            "text": "<system-reminder>\nThe following information describes your current session:\n\nCurrent working directory: \"{{cwd}}\".\n</system-reminder>"
           }
         ]
       }
@@ -68,16 +71,19 @@
         }
       },
       {
-        "name": "working_directory",
-        "description": "Read the current working directory, or change it with cd. Relative paths use the current directory. Existing shells and running processes keep their own directories.",
+        "name": "read_image",
+        "description": "Read a PNG/JPEG/WebP/GIF file and return the image itself. Large images are downscaled automatically; do not install image libraries or create thumbnails to inspect an image.",
         "input_schema": {
           "type": "object",
           "properties": {
-            "cd": {
+            "file_path": {
               "type": "string",
-              "description": "Existing directory to enter. Omit to read the current directory."
+              "description": "Path to the image file, resolved by the filesystem backend."
             }
-          }
+          },
+          "required": [
+            "file_path"
+          ]
         }
       }
     ],
@@ -91,7 +97,7 @@
           },
           {
             "type": "text",
-            "text": "Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\nCurrent working directory: \"{{cwd}}\"."
+            "text": "<system-reminder>\nThe following information describes your current session:\n\nCurrent working directory: \"{{cwd}}\".\n</system-reminder>"
           }
         ]
       },
@@ -136,16 +142,19 @@
         }
       },
       {
-        "name": "working_directory",
-        "description": "Read the current working directory, or change it with cd. Relative paths use the current directory. Existing shells and running processes keep their own directories.",
+        "name": "read_image",
+        "description": "Read a PNG/JPEG/WebP/GIF file and return the image itself. Large images are downscaled automatically; do not install image libraries or create thumbnails to inspect an image.",
         "input_schema": {
           "type": "object",
           "properties": {
-            "cd": {
+            "file_path": {
               "type": "string",
-              "description": "Existing directory to enter. Omit to read the current directory."
+              "description": "Path to the image file, resolved by the filesystem backend."
             }
-          }
+          },
+          "required": [
+            "file_path"
+          ]
         }
       }
     ],
@@ -159,7 +168,7 @@
           },
           {
             "type": "text",
-            "text": "Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\nCurrent working directory: \"{{cwd}}\"."
+            "text": "<system-reminder>\nThe following information describes your current session:\n\nCurrent working directory: \"{{cwd}}\".\n</system-reminder>"
           }
         ]
       },

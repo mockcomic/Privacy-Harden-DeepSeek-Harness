@@ -14,6 +14,7 @@ import type {
   ToolSchema,
   UserMessage,
 } from '@deepseek-ai/dsh-llm'
+import type { TypertResource } from '@deepseek-ai/dsh-typert-protocol'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 
 /** Identifies one session in the store (and its persistence artifacts). */
@@ -101,9 +102,17 @@ export interface SessionHeader {
   readonly id: SessionId
   /** Non-negative safe-integer Unix epoch milliseconds when the session was created. */
   readonly createdAt: number
-  /** Absolute working directory the session was created in (if any). */
+  /**
+   * Canonical absolute working directory the session was created in (if any). Producers resolve the
+   * requested directory through the execution-world filesystem before recording it, so the later
+   * canonical directory records of the working-directory service compare with it lexically.
+   */
   readonly cwd?: string
-  /** The session this one was forked from (seed lineage), if any. */
+  /**
+   * Direct creator of a subagent Session. Ordinary forks omit this field;
+   * historical ordinary forks may retain their source id here. Presence alone
+   * does not classify a Session as a subagent; use `origin` for that distinction.
+   */
   readonly parentSession?: SessionId
   /**
    * Whether this Session contains a fork-inherited event prefix. The exact prefix
@@ -131,6 +140,20 @@ export interface SessionHeader {
 }
 
 /**
+ * Caller-supplied storage fields that `buildSessionHeader` folds into a new {@link SessionHeader}.
+ * `isSeeded` marks fork lineage; supplying replay history alone does not make it inherited.
+ */
+export interface SessionHeaderMeta {
+  readonly cwd?: string
+  readonly parentSession?: SessionId
+  readonly createdAt?: number
+  readonly isSeeded?: boolean
+  readonly origin?: 'subagent'
+  readonly delegationDepth?: number
+  readonly agentPreset?: string
+}
+
+/**
  * Options for creating a {@link Session} via the store. `seed` replays/forks
  * an existing event log; `meta` carries the caller-supplied storage fields the
  * store folds into a {@link SessionHeader}.
@@ -148,15 +171,7 @@ export interface CreateSessionOptions {
    * Storage metadata read once before publication. `isSeeded` marks fork
    * lineage; supplying replay history alone does not make it inherited.
    */
-  readonly meta?: {
-    readonly cwd?: string
-    readonly parentSession?: SessionId
-    readonly createdAt?: number
-    readonly isSeeded?: boolean
-    readonly origin?: 'subagent'
-    readonly delegationDepth?: number
-    readonly agentPreset?: string
-  }
+  readonly meta?: SessionHeaderMeta
 }
 
 /**
@@ -206,8 +221,9 @@ export interface TurnEndReasonMap {
   blocked: { kind: 'blocked' }
   /**
    * The turn failed. `error` is always a structured failure: the `LlmError`
-   * facts verbatim, or `{ message: errorChain(error), code: 'UNKNOWN' }`
-   * flattened from any other error.
+   * facts verbatim, or `{ message: errorChain(error), code }` flattened from
+   * any other error, where `code` is `TOOL_ACTIVATION_FAILED` for a failed
+   * tool condition and `UNKNOWN` otherwise.
    */
   error: { kind: 'error'; error: LlmFailure }
   /** At least one step reached its output-token ceiling, even if a plugin continued the turn. */
@@ -233,7 +249,7 @@ export type TurnEndReason = TurnEndReasonMap[keyof TurnEndReasonMap]
 
 /**
  * Logged request state outside derived history: call config and tools. The
- * system prompt is derived history — surface node 0, a `system/message` event.
+ * system prompt is derived history — the initial and subsequent `system/message` nodes.
  * The latest full `request/header` snapshot reconstructs the header; canonical
  * empty optional fields are absent.
  */
@@ -316,16 +332,15 @@ export interface SessionEventMap {
     headerSeq?: SessionSeq
   }
   /**
-   * The rendered system prompt on the model-visible surface. The loop appends
-   * the first one as surface node 0 before the step's first `user/message`.
-   * A prepared in-history route can append nonempty changes in a continuing
-   * series. An incapable route or new series normalizes text to the first system
-   * node. Normalization empties nonempty later nodes, then rewrites the head if
-   * needed, through logged per-node replacements. An empty rendering always
-   * clears all active system nodes, leaving no older instructions model-visible.
-   * Empty later nodes are dormant and project to no message; an empty head with
-   * no active later node records "no system prompt". Restored nonempty text follows
-   * the same route and series rule; empty nodes never restore older text.
+   * System instructions and notices on the model-visible surface. The first
+   * accepted assembly reserves node 0, even with empty content. Later admissions
+   * append new or changed sections independently of the route's capabilities.
+   * Source metadata identifies canonical text and notices; retired records remove
+   * a source from committed state. Empty active text withdraws its instructions
+   * while preserving the source. Earlier messages retain their positions.
+   * `source.reset` replaces committed state, including when compaction rebuilds
+   * the initial system node from current instructions.
+   * Empty system nodes remain in the surface but produce no model message.
    */
   'system/message': { turn: number; step: number; message: SystemMessage }
   /**
@@ -396,8 +411,8 @@ export interface SessionEventMap {
   /**
    * Route metadata for the next request, logged only when the route, capacity,
    * or system prompt update mode changes. It does not participate in request
-   * reconstruction or header equality. Prompt admission uses the bound prepared
-   * call's capability, not this snapshot from an earlier request.
+   * reconstruction, header equality, or system-section admission. The bound
+   * prepared call's capabilities determine adapter representation.
    */
   'request/context': RequestContext
   /**
@@ -477,6 +492,11 @@ export type SurfaceIntent<T extends SurfaceEventType = SurfaceEventType> = {
   sourceEventSeqs?: SessionSeq[]
 })
 
+/** One positional event call proposed for append, without assigned sequence or time. */
+export type SessionEventInput = {
+  [K in SessionEventType]: readonly [type: K, data: SessionEventMap[K], ...opts: K extends SurfaceEventType ? [opts: SurfaceIntent<K>] : []]
+}[SessionEventType]
+
 /**
  * One immutable entry in the session log.
  *
@@ -549,6 +569,11 @@ export interface PluginRecord {
 }
 
 declare module '@deepseek-ai/dsh-typert-protocol' {
+  interface TypertResourceMap {
+    /** One Session; the Session Controller registers its default `sessionId` wire field. */
+    session: TypertResource<SessionId>
+  }
+
   interface RemoteErrorDetailsMap {
     /** The named Session does not exist; produced by every layer that resolves a SessionId. */
     'session/not-found': { readonly sessionId: SessionId }

@@ -1,6 +1,6 @@
 import { mountWorkingDirectoryFixture } from '../../subagent/tests/working-directory-fixture.ts'
 import { join } from 'node:path'
-import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
+import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
@@ -12,6 +12,7 @@ import * as ToolBash from '@deepseek-ai/dsh-tool-bash'
 import * as LlmDeepSeek from '@deepseek-ai/dsh-llm-deepseek-api-key'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import * as Spawn from '../src/index.ts'
+import DeepSeekAuth from '@deepseek-ai/dsh-deepseek-auth'
 import * as ToolSubagent from '@deepseek-ai/dsh-tool-subagent'
 
 /**
@@ -32,6 +33,7 @@ export async function spawnHarness(workdir: string): Promise<Context> {
     systemPrompt: { personaPrefix: 'You are a coding agent. Report only when the requested work is done.' },
   })
   await ctx.plugin(AgentLoop, { agents: [] })
+  await ctx.plugin(DeepSeekAuth)
   await ctx.plugin(LlmDeepSeek)
   await ctx.plugin(LocalSubprocessRuntime)
   await ctx.plugin(BashEnvPlugin)
@@ -49,5 +51,5 @@ export async function spawnHarness(workdir: string): Promise<Context> {
 export async function waitForIdle(ctx: Context, agent: Agent): Promise<void> {
   do {
     await agent.whenIdle()
-  } while (await ctx.subagents.waitForChildren(agent))
+  } while (await ctx.subagents.waitForTreeWork(agent))
 }

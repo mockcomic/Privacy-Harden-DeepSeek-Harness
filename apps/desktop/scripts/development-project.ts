@@ -16,7 +16,8 @@ import { dirname, join } from 'node:path'
 import { createDevelopmentProjectMetadata } from '../src/project-manager.ts'
 import type { DesktopRelease } from '../src/release.ts'
 import { DESKTOP_RUNTIME_FILE, type DesktopRuntimeDescriptor } from '../src/runtime-tree.ts'
-import { desktopTargetPlatform, type DesktopBuildTarget } from './desktop-build-paths.mjs'
+import type { DesktopAutoUpdateTarget } from '@deepseek-ai/dsh-desktop-publisher/desktop-auto-update-environment.mjs'
+import { desktopTargetPlatform } from './desktop-build-paths.mjs'
 
 interface PackageManifest {
   readonly name?: string

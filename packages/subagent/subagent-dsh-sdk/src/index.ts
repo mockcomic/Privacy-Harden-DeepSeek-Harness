@@ -90,7 +90,7 @@ function resolveConfiguredFile(field: string, value: string): string {
   const path = resolve(value)
   try {
     if (statSync(path).isFile()) return path
-  } catch {
+  } catch (_unreadablePath) {
     // The diagnostic below owns missing, inaccessible, and non-file paths uniformly.
   }
   throw new TypeError(`subagent-dsh-sdk ${field} must name an existing file: ${path}`)
@@ -118,7 +118,7 @@ function resolveSdkRoute(config: ResolvedConfig, requested: AgentOptions | undef
 
 /**
  * The SDK provider. It resolves Agent route options into the child runtime's
- * process-wide handshake; output schema, depth, tool filter, and persona stay
+ * process-wide handshake; output schema, depth, and independent preset selection stay
  * unsupported because their ownership does not cross this process boundary.
  */
 class SdkSubagentProvider implements SubagentProvider {

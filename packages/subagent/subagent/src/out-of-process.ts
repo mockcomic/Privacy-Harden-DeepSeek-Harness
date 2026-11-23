@@ -13,6 +13,7 @@
 import { accessSync, constants, statSync } from 'node:fs'
 import { isAbsolute } from 'node:path'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
+import { SubagentError } from './error.ts'
 import type { SubagentCapabilities, SubagentResult, SubagentRun, SubagentStopReason } from './types.ts'
 
 /** Maximum UTF-8 size of {@link SubagentResult.diagnostic}. */
@@ -50,15 +51,14 @@ function normalizeSubagentDiagnostic(result: SubagentResult): SubagentResult {
 /**
  * The capability advertisement of an out-of-process backend: NONE. A child in
  * another process cannot honor parent-enforced start features
- * (`agentOptions`/`outputSchema`/`maxDepth`/`toolFilter`/`persona`), so the service rejects a
+ * (`agentOptions`/`agentPreset`/`outputSchema`/`maxDepth`), so the service rejects a
  * request needing any of them before `start` runs — never accepted-then-ignored.
  */
 export const NO_START_CAPABILITIES: SubagentCapabilities = Object.freeze({
   agentOptions: false,
+  agentPreset: false,
   outputSchema: false,
   depthLimit: false,
-  toolFilter: false,
-  persona: false,
 })
 
 /**
@@ -101,13 +101,14 @@ function isEnterableDirectory(path: string): boolean {
  * @param label - which source supplied the value, for the diagnostic.
  * @param cwd - the candidate working directory.
  * @returns `cwd`, validated.
+ * @throws {SubagentError} `INVALID_CWD` when `cwd` is relative or not an enterable directory.
  */
 export function assertUsableCwd(prefix: string, label: string, cwd: string): string {
   if (!isAbsolute(cwd)) {
-    throw new Error(`${prefix}: ${label} must be an absolute path: ${cwd}`)
+    throw new SubagentError(`${prefix}: ${label} must be an absolute path: ${cwd}`, 'INVALID_CWD')
   }
   if (!isEnterableDirectory(cwd)) {
-    throw new Error(`${prefix}: ${label} is not an accessible directory: ${cwd}`)
+    throw new SubagentError(`${prefix}: ${label} is not an accessible directory: ${cwd}`, 'INVALID_CWD')
   }
   return cwd
 }
@@ -161,7 +162,7 @@ export async function settleRunResult(parts: RunResultSettlement): Promise<Subag
     // Flatten post-publication transport failures while preserving diagnostics.
     try {
       parts.onError?.(toError(error), 'error')
-    } catch {
+    } catch (_diagnosticSinkFailed) {
       // The diagnostic sink cannot reject the run result.
     }
     const collected = parts.collectDiagnostic?.()
