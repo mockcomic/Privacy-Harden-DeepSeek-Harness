@@ -72,11 +72,8 @@ it.each(['desktop', 'web'])('limits collection and its shutdown to the Desktop l
   }
   const emit = vi.spyOn(ctx.productTelemetry, 'emit')
   await analytics.report({ eventName: 'desktop_app_launch', timestamp: 1, attributes: {} })
-  expect(emit).toHaveBeenCalledOnce()
-  const attributes = emit.mock.calls[0]?.[0].attributes
-  expect(attributes?.app_version).toBe('test-version')
-  expect(typeof attributes?.os_name).toBe('string')
-  expect(typeof attributes?.memory_total_bytes).toBe('number')
+  expect(identity).not.toHaveBeenCalled()
+  expect(emit).not.toHaveBeenCalled()
   lifetime.abort()
   await policy.return?.()
   ctx.productTelemetry.emit({ eventName: 'desktop_upgrade_install_restart_click', body: 'upgrade', timestamp: Date.now() })

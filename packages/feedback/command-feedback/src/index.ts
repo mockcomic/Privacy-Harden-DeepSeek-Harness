@@ -9,7 +9,8 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import { CommandDefinitionId } from '@deepseek-ai/dsh-commands/brand'
+import { brandString } from '@deepseek-ai/dsh-brand'
+import type { CommandDefinitionId } from '@deepseek-ai/dsh-commands/types'
 import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
 import type { Session } from '@deepseek-ai/dsh-session'
 import { TypertRemoteService, Remote } from '@deepseek-ai/dsh-typert-protocol'
@@ -66,8 +67,8 @@ export function recordFeedback(session: Session, entry: FeedbackRecord): void {
  * Validate, record, and acknowledge one feedback entry. Returning an error
  * leaves no `feedback/record` event.
  * @param invocation - receiving agent, raw command input, and UI cancellation.
- * @returns an acknowledgement containing the receiving session id, or a usage
- * error when no feedback text was supplied.
+ * @returns an acknowledgement containing the receiving session and anonymous
+ * user ids, or a usage error when no feedback text was supplied.
  */
 function executeFeedbackCommand(invocation: CommandInvocation): CommandResult {
   if (invocation.rawInput.trim().length === 0) {
@@ -116,7 +117,7 @@ export class SessionFeedbackService extends TypertRemoteService {
 export function apply(ctx: Context): void {
   ctx.plugin(SessionFeedbackService)
   ctx.commands.register({
-    definitionId: CommandDefinitionId('@deepseek-ai/dsh-command-feedback'),
+    definitionId: brandString<CommandDefinitionId>('@deepseek-ai/dsh-command-feedback'),
     name: 'feedback',
     description: 'Record feedback about this session',
     input: { hint: '<text>' },

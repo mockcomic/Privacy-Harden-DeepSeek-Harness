@@ -155,9 +155,6 @@ describe('direct Messages HTTP', () => {
       'x-api-key': 'test-key', 'anthropic-version': '2023-06-01',
       'user-agent': expect.stringContaining('deepseek-harness/') as string,
     }, body: { thinking: { type: 'enabled' }, output_config: { effort: 'high' } } })
-    expect(http.requests[0]?.headers).not.toHaveProperty('x-deepseek-harness-user-id')
-    expect(http.requests[0]?.headers).not.toHaveProperty('x-deepseek-harness-session-id')
-    expect(http.requests[0]?.headers).not.toHaveProperty('x-deepseek-harness-compact')
     expect(llm.providerInfo('deepseek-official')).toEqual({ id: 'deepseek-official', name: 'DeepSeek' })
     expect(await llm.listModels('deepseek-official')).toEqual([])
     expect(await llm.resolveModel('deepseek-official', 'deepseek-flash')).toMatchObject({
@@ -201,7 +198,8 @@ describe('direct Messages HTTP', () => {
     const files = new DeepSeekFileStore()
     const llm = new DeepSeekAdapter({
       options: () => resolveAdapterOptions({ baseURL: source.url }),
-      resolveAuth: () => Promise.resolve({ headers: { 'x-api-key': 'test-key' } }), resolveAttachments: () => undefined, resolveImageAccess: () => undefined, resolveFiles: () => files,
+      resolveAuth: () => Promise.resolve({ headers: { 'x-api-key': 'test-key' } }),
+      resolveAttachments: () => undefined, resolveImageAccess: () => undefined, resolveFiles: () => files,
       prepareExtensions: prepare,
     })
     const error = await chunks(llm.stream(options())).catch((cause: unknown) => cause)
@@ -310,6 +308,7 @@ describe('direct Messages HTTP', () => {
       resolveAuth: () => Promise.resolve({ headers: { 'x-api-key': 'fixture-key' },
         onRequestError: async () => { throw new Error('credential storage unavailable') },
       }),
+      resolveUserId: () => 'fixture-user' as import('@deepseek-ai/dsh-anonymous-user-id').AnonymousUserId,
       prepareExtensions,
     })
     await expect(chunks(llm.stream(options()))).rejects.toMatchObject({ code: 'AUTH', failure: { status: 401 } })

@@ -9,6 +9,9 @@
   ],
   "references": [
     {
+      "path": "../../util/brand"
+    },
+    {
       "path": "../../../vendor/cosmokit"
     },
     {
@@ -19,6 +22,9 @@
     },
     {
       "path": "../../core/session"
+    },
+    {
+      "path": "../../identity/anonymous-user-id"
     },
     {
       "path": "../../typert/protocol"

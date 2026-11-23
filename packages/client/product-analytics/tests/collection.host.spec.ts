@@ -114,23 +114,14 @@ it('requires the exporter even when collection is disabled', async () => {
   expect(ctx.productAnalytics.enabled()).toBe(false)
 })
 
-it('streams live policy changes and rejects intake disabled during identity lookup', async () => {
+it('streams the effective policy and closes on abort', async () => {
   const b = await setup(true)
   const lifetime = new AbortController()
   const iterator = b.ctx.productAnalytics.watchPolicy(lifetime.signal)[Symbol.asyncIterator]()
   expect(await iterator.next()).toEqual({ value: true, done: false })
-  const identity = Promise.withResolvers<undefined>()
-  b.getDeviceIdentity.mockReturnValueOnce(identity.promise)
   const report = b.ctx.productAnalytics.report({ eventName: 'auth_page_view', timestamp: 1, attributes: {} })
-  const next = iterator.next()
-  // Loader commits the stable Config reference before publishing this notification.
-  const { updateVolatile, createVolatile } = await import('../../../../vendor/cosmokit/src/volatile.ts')
-  const config = b.fiber.config as import('../src/index.ts').Config
-  updateVolatile(config.enabled, createVolatile(false))
-  b.fiber.ctx.emit('loader/volatile-update', [['enabled']])
-  expect(await next).toEqual({ value: false, done: false })
-  identity.resolve(undefined)
   await report
+  expect(b.getDeviceIdentity).not.toHaveBeenCalled()
   expect(b.emit).not.toHaveBeenCalled()
   const closed = iterator.next()
   lifetime.abort()

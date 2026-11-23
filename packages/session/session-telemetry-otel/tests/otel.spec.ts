@@ -4,7 +4,8 @@ import { join } from 'node:path'
 import { afterEach, expect, expectTypeOf, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
-import { MessageId } from '@deepseek-ai/dsh-llm/brand'
+import { brandString } from '@deepseek-ai/dsh-brand'
+import type { MessageId } from '@deepseek-ai/dsh-llm'
 import { recordFeedback } from '@deepseek-ai/dsh-command-feedback'
 import OTel from '@deepseek-ai/dsh-otel'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
@@ -42,13 +43,13 @@ it('keeps every accepted mode local and does not mint an anonymous user id', asy
   recordFeedback(session, { text: 'stays on this machine' })
   session.append('feedback/message-put', {
     sessionId: session.id,
-    item: { messageId: MessageId('m'), rating: 'positive', version: 'v' as never, createdAt: 1, updatedAt: 1 },
+    item: { messageId: brandString<MessageId>('m'), rating: 'positive', version: 'v' as never, createdAt: 1, updatedAt: 1 },
   })
-  session.append('feedback/message-delete', { sessionId: session.id, messageId: MessageId('m') })
-  session.append('feedback/message-delete', { sessionId: SessionId('other'), messageId: MessageId('m') })
+  session.append('feedback/message-delete', { sessionId: session.id, messageId: brandString<MessageId>('m') })
+  session.append('feedback/message-delete', { sessionId: SessionId('other'), messageId: brandString<MessageId>('m') })
   session.append('feedback/message-put', {
     sessionId: SessionId('other'),
-    item: { messageId: MessageId('m'), rating: 'negative', version: 'v' as never, createdAt: 1, updatedAt: 1 },
+    item: { messageId: brandString<MessageId>('m'), rating: 'negative', version: 'v' as never, createdAt: 1, updatedAt: 1 },
   })
   expect(warn).toHaveBeenCalledTimes(3)
   const child = ctx.sessions.fork(session, undefined, SessionId('child'))

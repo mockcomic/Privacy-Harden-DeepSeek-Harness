@@ -254,6 +254,7 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('llm-deepseek e2e (real API)', ()
     })
     expect(result.finish.kind).toBe('stop')
     expect(textOf(result).toLowerCase()).toContain('pong')
+    expect(SessionLogDeepSeek.acceptedThrough(session)).toBe(0)
   })
 
   it('serves a real request with the key held only by a credentials-local document', async () => {

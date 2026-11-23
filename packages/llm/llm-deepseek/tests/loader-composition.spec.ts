@@ -230,7 +230,7 @@ describe('llm-deepseek real dynamic composition', () => {
     session.append('turn/start', { turn: 1 })
 
     await assemble(ctx, { model: 'deepseek-v4-flash', messages: [], sessionId: session.id })
-    const request = server.requests[0] as { dsh_plugin_packages: { version: number; packages: unknown[] } }
+    const request = server.requests[0] as Record<string, unknown>
     expect(request).not.toHaveProperty('dsh_session_log')
     expect(request).not.toHaveProperty('dsh_plugin_packages')
   })
@@ -257,25 +257,6 @@ describe('llm-deepseek real dynamic composition', () => {
     }
     expect(request).not.toHaveProperty('dsh_session_log')
     expect(request).not.toHaveProperty('dsh_plugin_packages')
-  })
-
-  it.each([false, true])('applies a registered upload exclusion through HTTP with consumer first=%s', async (exclusionFirst) => {
-    vi.stubEnv('DEEPSEEK_API_KEY', 'entry-key')
-    const server = await mockServer([{ kind: 'sse', events: textEvents }, { kind: 'sse', events: textEvents }])
-    const { ctx } = await loadComposition({ withDynamic: false, baseURL: server.url, exclusionFirst })
-    const session = ctx.sessions.create(brandString<SessionId>('excluded-composition'))
-    session.append('turn/start', { turn: 1 })
-
-    await assemble(ctx, { model: 'deepseek-v4-flash', messages: [], sessionId: session.id, purpose: 'test-upload-exclusion' })
-    expect(server.headers[0]?.['x-deepseek-harness-session-id']).toBe(session.id)
-    expect(server.requests[0]).not.toHaveProperty('dsh_session_log')
-    expect(server.requests[0]).toHaveProperty('dsh_plugin_packages')
-    expect(SessionLogDeepSeek.acceptedThrough(session)).toBe(-1)
-    expect(session.snapshotEvents()).toHaveLength(1)
-
-    await assemble(ctx, { model: 'deepseek-v4-flash', messages: [], sessionId: session.id })
-    expect(server.requests[1]).toHaveProperty('dsh_session_log')
-    expect(SessionLogDeepSeek.acceptedThrough(session)).toBe(0)
   })
 
   it('boots from cordis.yml and routes the next request after external settings and credential edits', async () => {

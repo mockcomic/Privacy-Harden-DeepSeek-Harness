@@ -1,0 +1,130 @@
+name: Release installers
+
+# Privacy fork release: build unsigned desktop installers for Windows, Linux,
+# and macOS, then attach them to a GitHub Release. Unsigned means no code
+# signing and no notarization: the fork ships no DeepSeek release credentials.
+# Windows/macOS builds run on their native hosted runners (the fork inherits
+# the upstream toolchain floors, so hosted macOS/Linux images are allowed
+# there); Linux builds in an Ubuntu container for a low glibc floor.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-installers-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DSH_TELEMETRY_DISABLED: '1'
+  DSH_BUILD_CLIENT_PROFILE: official
+
+jobs:
+  package:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows-x64
+            runner: windows-2025
+            script: package:desktop:win:x64:unsigned
+          - name: linux-x64
+            runner: ubuntu-24.04
+            script: package:desktop:linux:x64
+          - name: macos-arm64
+            runner: macos-15
+            script: package:desktop:mac:arm64:unsigned
+          - name: macos-x64
+            runner: macos-15-intel
+            script: package:desktop:mac:x64:unsigned
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Enable Windows Developer Mode (symlink support)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: >-
+          reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock"
+          /t REG_DWORD /f /v "AllowDevelopmentWithoutDevLicense" /d "1"
+
+      - uses: pnpm/action-setup@v5.0.0
+
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install (immutable)
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            if pnpm install --frozen-lockfile; then exit 0; fi
+            [ "$attempt" -lt 3 ] && sleep 10
+          done
+          exit 1
+
+      - name: Package desktop
+        shell: bash
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: '1'
+        run: pnpm run ${{ matrix.script }}
+
+      - name: Collect artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          find apps/desktop/.desktop-build/targets -type f \
+            \( -name '*.exe' -o -name '*.AppImage' -o -name '*.dmg' -o -name '*.zip' -o -name '*.blockmap' -o -name '*.yml' \) \
+            -path '*artifacts*' -exec cp {} out/ \;
+          ls -la out
+
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: installer-${{ matrix.name }}
+          path: out/
+          if-no-files-found: error
+          retention-days: 30
+
+  release:
+    name: Publish GitHub Release
+    needs: package
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v7.0.1
+        with:
+          path: installers/
+          merge-multiple: true
+
+      - name: Release notes
+        run: |
+          cat <<'EOF' > notes.md
+          Privacy-hardened build of DeepSeek Harness.
+
+          - No telemetry, analytics, session-log upload, plugin inventory, or
+            anonymous user id leaves the process (see PRIVACY_HARDENING.md).
+          - No DeepSeek account login required; configure any
+            Anthropic-compatible or OpenAI-compatible endpoint instead.
+          - Unsigned: Windows SmartScreen and macOS Gatekeeper will warn once.
+
+          Linux AppImage builds run in an Ubuntu container for a low glibc
+          floor; macOS and Windows binaries come from hosted runners, so very
+          old OS versions may not be supported.
+          EOF
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: installers/*
+          body_path: notes.md
+          draft: false
+          prerelease: false

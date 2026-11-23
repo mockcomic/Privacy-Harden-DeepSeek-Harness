@@ -4,7 +4,6 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { chromium } from 'playwright'
 import { expect, it, onTestFinished } from 'vitest'
-import { parseEntryYaml } from '@deepseek-ai/cordis-plugin-include'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { startMockLlmServer } from '@deepseek-ai/dsh-llm-mock-server'
 import { launchWebScaffold, webSnapshotMode } from './scaffold.ts'
@@ -31,32 +30,6 @@ it.skipIf(webSnapshotMode() === 'record')('omits session logs and hides the uplo
   const page = await newEnglishPage(browser)
   await page.goto(scaffold.authenticatedUrl)
   await connectFreshWorkspace(page, scaffold.workspaceCwd)
-  const input = page.locator('[data-composer-input]').first()
-  const send = async (text: string) => {
-    const settled = scaffold.whenTurnSettled()
-    await input.fill(text)
-    await input.press('Enter')
-    return settled
-  }
-  const setUpload = async (enabled: boolean) => {
-    await openSettings(page, 'en')
-    const toggle = page.getByRole('switch', { name: 'Upload Session Log when using the official model API' })
-    await expect.poll(() => toggle.getAttribute('aria-checked')).toBe(String(!enabled))
-    await toggle.click()
-    await expect.poll(() => toggle.getAttribute('aria-checked')).toBe(String(enabled))
-    await expect.poll(async () => {
-      const patches = parseEntryYaml(await readFile(join(scaffold.harnessHome, 'profiles/scaffold/cordis.patch.yml'), 'utf8')) as { id: string; config?: { enabled?: boolean } }[]
-      return patches.find(patch => patch.id === 'session-log-deepseek')?.config?.enabled ?? true
-    }).toBe(enabled)
-    await page.keyboard.press('Escape')
-  }
-
-  const sessionId = await send('upload-enabled-marker')
-  expect(server.requests).toHaveLength(1)
-  expect(server.requests[0]!.body).toHaveProperty('dsh_session_log')
-  const first = server.requests[0]!.body as { dsh_session_log: { throughSeq: number } }
-  await setUpload(false)
-  await page.reload()
   await openSettings(page, 'en')
   expect(await page.getByRole('switch', { name: 'Upload Session Log when using the official model API' }).count()).toBe(0)
   await page.keyboard.press('Escape')
