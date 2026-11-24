@@ -78,13 +78,15 @@ Loopback, private LAN, and Tailscale addresses are allowed unless a future chang
 
 ## Dependencies that can still communicate
 
-`electron-updater` can contact the feed in `app-update.yml` when a person starts an update check or when `DSH_DESKTOP_UPDATES=1` enables background checks. The packaged feed is upstream's `https://download.deepseek.com`. `DSH_DESKTOP_UPDATE_FEED_URL` points the updater feed at a mirror, `DSH_DESKTOP_UPDATE_POLICY_ORIGIN` points the mandatory-policy origin at a mirror (both validated as HTTPS origins without credentials, path, query, or fragment), and `DSH_DESKTOP_UPDATE_FEED=disabled` makes a manual check report "disabled" instead of contacting either.
+`electron-updater` can contact the feed in `app-update.yml`, but this fork never does by default: manual checks require `DSH_DESKTOP_UPDATE_FEED=enabled` and background checks require `DSH_DESKTOP_UPDATES=1`. The packaged feed is upstream's `https://download.deepseek.com`. `DSH_DESKTOP_UPDATE_FEED_URL` points the updater feed at a mirror, `DSH_DESKTOP_UPDATE_POLICY_ORIGIN` points the mandatory-policy origin at a mirror (both validated as HTTPS origins without credentials, path, query, or fragment).
 
-Connector plugins that register upstream skills (`upstreamSkills`) download guide archives from `skillsUrls` at plugin load, which defaults to `https://codeload.github.com` (the wecom and tencent-meeting connectors are the shipped users). `skillsUrls` is a Config array: point it at a mirror, or at an unreachable localhost port, to opt out of that fetch entirely.
+Connector plugins that register upstream skills (`upstreamSkills`) can download guide archives from `skillsUrls` at plugin load, which defaults to `https://codeload.github.com` (the wecom and tencent-meeting connectors are the shipped users). The fetch is gated behind `skillsDownloadEnabled`, default `false`; when enabled, `skillsUrls` accepts a mirror or any HTTPS prefix. Plugin installation pings no registry unless `registryProbeEnabled` is turned on, and the person always selects the registry for the install itself.
 
 The opt-in plugin market bundle (`packages/boot/plugin-market`) fetches plugin indexes and detail files from `raw.githubusercontent.com` and configured GitLab origins, and falls back to anonymous git smart-HTTP clones when a file API has no answer. No index source is configured by default, so a default boot contacts neither; installing plugins from the market is a deliberate action like selecting an npm registry.
 
 The DeepSeek account and official model clients contact the configured origins when those features are used. Defaults remain `https://api.deepseek.com` and `https://platform.deepseek.com`.
+
+Other opt-in features contact third parties when the person enables them, each with a Config endpoint to redirect: the experimental translator calls Google (`translate.googleapis.com`) or Bing (`edge.microsoft.com`) through its `googleEndpoint`/`bingEndpoint` config; the SenseVoice speech-to-text plugin downloads models from HuggingFace (`huggingface.co`, `hf-mirror.com`) through its model-hosts config; the Notion and Tencent Docs connectors reach their hosted MCP endpoints (`mcp.notion.com`, `docs.qq.com`) through their `url` config; and the DingTalk connector downloads its workspace CLI from GitHub or Gitee releases. None of these run unless the plugin or feature is mounted and used.
 
 Plugin installation uses the npm registry the person selects. The official registry probe is `https://registry.npmjs.org/`.
 
