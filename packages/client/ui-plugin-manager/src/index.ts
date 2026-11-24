@@ -13,7 +13,11 @@ declare module '@deepseek-ai/cordis' {
 
 /** Registry-probe deadline and process-local cache policy. */
 export interface Config {
-  /** Whether the dialog can compare the public npm registries. */
+  /**
+   * Whether to ping `registry.npmjs.org` and `registry.npmmirror.com` to pick the fastest
+   * registry. Off by default so plugin UI mount contacts neither; `null` keeps the Client's
+   * initial selection.
+   */
   registryProbeEnabled: boolean
   /** Deadline for the parallel HTTPS probes, including response cleanup. */
   registryProbeTimeoutMs: number
@@ -24,7 +28,7 @@ export interface Config {
 /** Compares public registry responses on the Host; the Client owns the initial selection. */
 export default class PluginRegistryProbe extends TypertRemoteService {
   static Config: z<Partial<Config>, Config> = z.object({
-    registryProbeEnabled: z.boolean().default(true),
+    registryProbeEnabled: z.boolean().default(false),
     registryProbeTimeoutMs: z.natural().min(1).max(MAX_TIMER_DELAY_MS).default(1500),
     registryProbeCacheTtlMs: z.natural().default(300000),
   })

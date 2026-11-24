@@ -5,7 +5,12 @@ import PluginRegistryProbe, { type Config } from '../src/index.ts'
 
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers() })
 
-async function mount(config: Partial<Config> = {}) {
+function mount(config: Partial<Config> = {}) {
+  // Probe suites exercise the enabled path; the default-off case mounts with its own config.
+  return mountWith({ registryProbeEnabled: true, ...config })
+}
+
+async function mountWith(config: Partial<Config>) {
   const ctx = new Context()
   onTestFinished(() => ctx.fiber.dispose())
   await ctx.plugin(PluginRegistryProbe, PluginRegistryProbe.Config(config))
@@ -58,7 +63,15 @@ it.each([OFFICIAL_NPM_REGISTRY, NPMMIRROR_REGISTRY])('shares concurrent probes a
 
 it('performs no request when disabled', async () => {
   const { fetch } = transport()
-  const { probe } = await mount({ registryProbeEnabled: false })
+  const { probe } = await mountWith({ registryProbeEnabled: false })
+  expect(await probe.fastest()).toBeNull()
+  expect(fetch).not.toHaveBeenCalled()
+})
+
+it('performs no request by default: the privacy fork ships the probe off', async () => {
+  const { fetch } = transport()
+  expect(PluginRegistryProbe.Config({}).registryProbeEnabled).toBe(false)
+  const { probe } = await mountWith({})
   expect(await probe.fastest()).toBeNull()
   expect(fetch).not.toHaveBeenCalled()
 })
