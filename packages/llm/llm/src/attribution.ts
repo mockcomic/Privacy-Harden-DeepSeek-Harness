@@ -27,8 +27,8 @@ export interface AppIdentity {
   product: string
   /** Product version; sourced from package metadata, never hand-copied. */
   version: string
-  /** Repository home URL of the app, used as the `User-Agent` comment. */
-  url: string
+  /** Repository home URL of the app, used as the `User-Agent` comment; omit to send no comment. */
+  url?: string | undefined
   /** RFC 9110 product token appended after the comment, such as `dsh-profile/web`. */
   suffix?: string | undefined
 }
@@ -50,17 +50,46 @@ function launchSuffix(): string | undefined {
   return value
 }
 
+// The repository comment is a deployment choice like the suffix: an env value
+// so a launcher can set it without a plugin context.
+const DEFAULT_ATTRIBUTION_URL = 'https://github.com/deepseek-ai/deepseek-harness'
+
+/**
+ * Read the launching application's `User-Agent` comment URL on each use.
+ * `DSH_USER_AGENT_URL=none` suppresses the comment entirely; any other value
+ * replaces the repository URL. It is a process environment value for the same
+ * reason {@link launchSuffix} is: {@link attributionHeaders} runs without a
+ * plugin context.
+ * @returns the comment URL, or undefined when suppressed.
+ * @throws Error when the value is neither `none` nor an absolute http(s) URL.
+ */
+function attributionUrl(): string | undefined {
+  const value = process.env.DSH_USER_AGENT_URL
+  if (value === undefined || value === '') return DEFAULT_ATTRIBUTION_URL
+  if (value === 'none') return undefined
+  let url: URL
+  try {
+    url = new URL(value)
+  } catch (error) {
+    throw new Error(`DSH_USER_AGENT_URL must be "none" or an absolute http(s) URL; got ${JSON.stringify(value)} (${String(error)})`)
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    throw new Error(`DSH_USER_AGENT_URL must be "none" or an absolute http(s) URL; got ${JSON.stringify(value)}`)
+  }
+  return value
+}
+
 /**
  * The harness's own identity: the default every adapter sends. Its `suffix`
- * reads `DSH_USER_AGENT_SUFFIX`. Deployments
- * that need a white-label identity pass their own {@link AppIdentity} to
- * {@link attributionHeaders} — omission falls back to this default; nothing
- * can suppress attribution entirely.
+ * reads `DSH_USER_AGENT_SUFFIX` and its `url` reads `DSH_USER_AGENT_URL`.
+ * Deployments that need a white-label identity pass their own
+ * {@link AppIdentity} to {@link attributionHeaders} — omission falls back to
+ * this default; the product token itself cannot be suppressed.
  */
 export const APP_IDENTITY: AppIdentity = {
   product: 'deepseek-harness',
   version,
-  url: 'https://github.com/deepseek-ai/deepseek-harness',
+  get url() { return attributionUrl() },
   get suffix() { return launchSuffix() },
 }
 
@@ -72,8 +101,9 @@ export const APP_IDENTITY: AppIdentity = {
  * @returns the ready-to-send header value.
  */
 export function userAgent(identity: AppIdentity = APP_IDENTITY): string {
-  const base = `${identity.product}/${identity.version} (+${identity.url})`
-  return identity.suffix === undefined ? base : `${base} ${identity.suffix}`
+  const base = `${identity.product}/${identity.version}`
+  const commented = identity.url === undefined ? base : `${base} (+${identity.url})`
+  return identity.suffix === undefined ? commented : `${commented} ${identity.suffix}`
 }
 
 /**

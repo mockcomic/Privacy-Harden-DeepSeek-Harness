@@ -4,7 +4,10 @@ import { APP_IDENTITY, attributionHeaders, userAgent } from '@deepseek-ai/dsh-ll
 import type { AppIdentity } from '@deepseek-ai/dsh-llm'
 
 // The default identity must not depend on the developer's exported suffix.
-beforeEach(() => { vi.stubEnv('DSH_USER_AGENT_SUFFIX', undefined) })
+beforeEach(() => {
+  vi.stubEnv('DSH_USER_AGENT_SUFFIX', undefined)
+  vi.stubEnv('DSH_USER_AGENT_URL', undefined)
+})
 afterEach(() => { vi.unstubAllEnvs() })
 
 const manifest = createRequire(import.meta.url)('../package.json') as { version: string }
@@ -43,6 +46,34 @@ describe('userAgent', () => {
 
   it('appends the identity suffix after the comment', () => {
     expect(userAgent({ ...forkIdentity, suffix: 'dsh-profile/web' })).toBe('fork-agent/9.9.9 (+https://example.com/fork-agent) dsh-profile/web')
+  })
+
+  it('omits the comment entirely for an identity without a url', () => {
+    expect(userAgent({ product: 'fork-agent', version: '9.9.9' })).toBe('fork-agent/9.9.9')
+  })
+})
+
+describe('DSH_USER_AGENT_URL', () => {
+  it('replaces the repository comment with the configured URL', () => {
+    vi.stubEnv('DSH_USER_AGENT_URL', 'https://mirror.example')
+    expect(APP_IDENTITY.url).toBe('https://mirror.example')
+    expect(userAgent()).toBe(`deepseek-harness/${manifest.version} (+https://mirror.example)`)
+  })
+
+  it.each(['', undefined])('keeps the repository comment when it is %j', (value) => {
+    vi.stubEnv('DSH_USER_AGENT_URL', value)
+    expect(APP_IDENTITY.url).toBe('https://github.com/deepseek-ai/deepseek-harness')
+  })
+
+  it('drops the comment entirely when the value is the bare word "none"', () => {
+    vi.stubEnv('DSH_USER_AGENT_URL', 'none')
+    expect(APP_IDENTITY.url).toBeUndefined()
+    expect(userAgent()).toBe(`deepseek-harness/${manifest.version}`)
+  })
+
+  it('rejects a value that is not an absolute URL or "none"', () => {
+    vi.stubEnv('DSH_USER_AGENT_URL', 'mirror.example')
+    expect(() => userAgent()).toThrow('DSH_USER_AGENT_URL must be "none" or an absolute http(s) URL')
   })
 })
 
