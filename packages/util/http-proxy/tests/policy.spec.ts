@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import type { EnvLookup } from '../src/policy.ts'
 import {
+  createReportingDenier,
+  parseDeniedReportingHosts,
   bypassesProxy,
   isLoopbackHost,
   proxyForUrl,
@@ -238,5 +240,39 @@ describe('proxyForUrl', () => {
 
   it('returns nothing under a direct policy', () => {
     expect(proxyForUrl(DIRECT_POLICY, new URL('https://example.com/'))).toBeUndefined()
+  })
+})
+
+describe('denied reporting hosts', () => {
+  it('keeps today\'s single collector as the default', () => {
+    expect(parseDeniedReportingHosts([])).toEqual(['dsh-otel-collector.deepseeksvc.com'])
+  })
+
+  it('accepts bare hostnames, normalizing case and one trailing dot', () => {
+    expect(parseDeniedReportingHosts(['Collector.Example.'])).toEqual(['collector.example'])
+  })
+
+  it('de-duplicates hosts that normalize alike', () => {
+    expect(parseDeniedReportingHosts(['a.test', 'A.TEST.', 'a.test.'])).toEqual(['a.test'])
+  })
+
+  it.each([
+    'https://a.test',
+    'a.test:443',
+    'a.test/path',
+    'user@a.test',
+    'a.test?q=1',
+    'a.test#f',
+    ' ',
+  ])('rejects %j as a denied host', (value) => {
+    expect(() => parseDeniedReportingHosts([value])).toThrow(/not a bare hostname/)
+  })
+
+  it('denies exactly the hosts of the built matcher', () => {
+    const denied = createReportingDenier(parseDeniedReportingHosts(['a.test.', 'B.TEST']))
+    expect(denied(new URL('https://a.test/v1/logs'))).toBe(true)
+    expect(denied(new URL('https://b.test/v1/logs'))).toBe(true)
+    expect(denied(new URL('https://c.test/v1/logs'))).toBe(false)
+    expect(denied(new URL('https://a.test.evil/v1/logs'))).toBe(false)
   })
 })

@@ -97,6 +97,14 @@ export class DesktopUpdateCoordinator {
   get revision(): number { return this.generation }
 
   /**
+   * Replace the packaged feed with a deployment mirror before any check runs.
+   * @param url - validated HTTPS base URL handed to electron-updater's generic provider.
+   */
+  useFeedUrl(url: string): void {
+    this.updater.setFeedURL({ provider: 'generic', url })
+  }
+
+  /**
    * Suspend ordinary updates when settings or previous-target cleanup are invalid.
    * @param detail - File path and safe diagnostic, without document contents.
    * @param reason - Startup validation or retirement of a previous target.

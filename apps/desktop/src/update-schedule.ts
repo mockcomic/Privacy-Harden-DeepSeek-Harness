@@ -9,6 +9,59 @@ export function desktopBackgroundUpdatesEnabled(env: NodeJS.ProcessEnv = process
   return env.DSH_DESKTOP_UPDATES === '1'
 }
 
+/** Where a manual update check goes when the packaged feed is replaced or refused. */
+export interface DesktopUpdateFeedConfig {
+  /** Mirror base URL for the updater feed, or undefined for the packaged `app-update.yml`. */
+  readonly feedUrl: string | undefined
+  /** Mandatory-policy origin override, or undefined for the packaged manifest's policy. */
+  readonly policyOrigin: string | undefined
+  /** Whether a user-started check may contact the feed at all. */
+  readonly manualChecksEnabled: boolean
+}
+
+/**
+ * Validate a Desktop update endpoint override: an HTTPS origin with no credentials, path, query,
+ * or fragment — the same rule `resolveDesktopPolicyConfig` applies to policy origins.
+ * @param value - raw environment value.
+ * @param name - variable name to blame in the rejection.
+ * @returns the normalized origin.
+ */
+function httpsOverrideOrigin(value: string, name: string): string {
+  let url: URL
+  try {
+    url = new URL(value)
+  } catch (error) {
+    throw new Error(`desktop update: ${name} must be an HTTPS origin without credentials, path, query, or fragment (${String(error)})`)
+  }
+  if (url.protocol !== 'https:' || url.username !== '' || url.password !== ''
+    || (url.pathname !== '' && url.pathname !== '/') || url.search !== '' || url.hash !== '') {
+    throw new Error(`desktop update: ${name} must be an HTTPS origin without credentials, path, query, or fragment`)
+  }
+  return url.origin
+}
+
+/**
+ * Resolve feed-override environment without changing automatic behavior.
+ * `DSH_DESKTOP_UPDATE_FEED_URL` replaces the packaged updater feed, `DSH_DESKTOP_UPDATE_POLICY_ORIGIN`
+ * replaces the packaged policy origin, and `DSH_DESKTOP_UPDATE_FEED=disabled` makes a manual check
+ * report that feed checks are disabled instead of contacting either.
+ * @param env - Desktop process environment.
+ * @returns Validated feed overrides.
+ */
+export function resolveDesktopUpdateFeedConfig(env: NodeJS.ProcessEnv): DesktopUpdateFeedConfig {
+  const feedValue = env.DSH_DESKTOP_UPDATE_FEED_URL?.trim()
+  const policyValue = env.DSH_DESKTOP_UPDATE_POLICY_ORIGIN?.trim()
+  const mode = env.DSH_DESKTOP_UPDATE_FEED?.trim()
+  if (mode !== undefined && mode !== '' && mode !== 'disabled') {
+    throw new Error('desktop update: DSH_DESKTOP_UPDATE_FEED must be unset or exactly "disabled"')
+  }
+  return {
+    feedUrl: feedValue === undefined || feedValue === '' ? undefined : httpsOverrideOrigin(feedValue, 'DSH_DESKTOP_UPDATE_FEED_URL'),
+    policyOrigin: policyValue === undefined || policyValue === '' ? undefined : httpsOverrideOrigin(policyValue, 'DSH_DESKTOP_UPDATE_POLICY_ORIGIN'),
+    manualChecksEnabled: mode !== 'disabled',
+  }
+}
+
 /** Validated polling delays; maxBackoffMs caps the final randomized delay. */
 export interface DesktopUpdateScheduleConfig {
   readonly intervalMs: number

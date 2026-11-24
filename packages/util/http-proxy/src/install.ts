@@ -7,11 +7,15 @@
  * @module @deepseek-ai/dsh-http-proxy/install
  */
 
+import { createRequire } from 'node:module'
 import type { Dispatcher, Pool } from 'undici'
 import {
-  deniedReportingHost,
+  createReportingDenier,
   isSupportedProxyUrl,
+  normalizeReportingHost,
+  DENIED_REPORTING_HOSTS_ENV_NAMES,
   OutboundReportingDeniedError,
+  parseDeniedReportingHosts,
   POLICY_ENV_NAMES,
   PROXY_ENV_NAMES,
   proxyForUrl,
@@ -306,36 +310,202 @@ export function proxyEnvironmentForChild(): Readonly<Record<string, string | und
 }
 
 /**
- * Read a fetch target without throwing on a value fetch itself will reject.
- * @param input - the fetch resource.
+ * Read a request target without throwing on a value the entry point itself will reject.
+ * Accepts the shapes `fetch`, `http.request`, `https.request`, and `undici.request` use:
+ * a URL, a string, an options record carrying `protocol`/`host`/`hostname`/`port`/`path`,
+ * or a `Request`-like with `.url`.
+ * @param input - the request target.
+ * @param options - companion options for the `(url, options)` overloads; may carry host overrides.
  * @returns the parsed URL, or undefined when it cannot be parsed here.
  */
-function fetchTarget(input: Parameters<typeof fetch>[0]): URL | undefined {
+function requestTarget(input: unknown, options?: unknown): URL | undefined {
   try {
-    if (typeof input === 'string' || input instanceof URL) return new URL(input)
-    return new URL(input.url)
+    if (input instanceof URL) return input
+    if (typeof input === 'string') return new URL(input)
+    if (input !== null && typeof input === 'object' && 'url' in input && typeof input.url === 'string') {
+      return new URL(input.url)
+    }
+    // First-argument options records: `(options[, cb])` form.
+    const record = typeof input === 'object' && input !== null ? input as Record<string, unknown> : undefined
+    const opts = (typeof options === 'object' && options !== null ? options as Record<string, unknown> : undefined) ?? record
+    if (opts === undefined) return undefined
+    // undici dispatch options carry an `origin` (a string or an already-parsed URL, depending on
+    // the call path) and, through a proxy, an absolute-form `path` naming the tunneled target.
+    if (typeof opts.origin === 'string' || opts.origin instanceof URL) {
+      const absolutePath = typeof opts.path === 'string' && /^https?:\/\//.test(opts.path) ? opts.path : undefined
+      if (absolutePath !== undefined) return new URL(absolutePath)
+      return new URL(opts.origin)
+    }
+    const protocol = typeof opts.protocol === 'string' ? opts.protocol : undefined
+    const host = typeof opts.host === 'string' ? opts.host : undefined
+    const hostname = typeof opts.hostname === 'string' ? opts.hostname : undefined
+    const port = typeof opts.port === 'number' || typeof opts.port === 'string' ? String(opts.port) : undefined
+    const named = host !== undefined ? host : hostname
+    if (protocol === undefined || named === undefined) return undefined
+    return new URL(`${protocol.replace(/:$/, '')}://${named}${port === undefined || port === '443' || port === '80' ? '' : `:${port}`}`)
   } catch {
     return undefined
   }
 }
 
 /**
- * Reject reporting-collector fetches before the original implementation runs.
- * @returns a disposer that restores the previous `fetch` when this guard is still installed.
+ * Build the typed refusal for one resolved target, or nothing when the target is allowed.
+ * @param denied - matcher built from the validated denied-host list.
+ * @param url - the resolved request target, when it could be parsed.
+ * @returns the refusal error, or undefined when the request may proceed.
  */
-function installReportingFetchGuard(): () => void {
-  const original = globalThis.fetch
-  const guarded: typeof fetch = (input, init) => {
-    const url = fetchTarget(input)
-    if (url !== undefined && deniedReportingHost(url)) {
-      return Promise.reject(new OutboundReportingDeniedError(url.hostname.replace(/\.$/, '').toLowerCase()))
+function refusalOf(denied: (url: URL) => boolean, url: URL | undefined): OutboundReportingDeniedError | undefined {
+  return url !== undefined && denied(url)
+    ? new OutboundReportingDeniedError(normalizeReportingHost(url.hostname) ?? url.hostname)
+    : undefined
+}
+
+/**
+ * Refuse reporting-collector connections before the original implementation runs, over every
+ * outbound entry point the shipped process can reach: `globalThis.fetch`, the `node:http` and
+ * `node:https` request/get overloads, and `undici.request` (whose own `fetch` reuses global fetch,
+ * already wrapped here). Refusal carries the host only, matching the fetch semantics: the error
+ * names the blocked hostname and nothing else about the request.
+ * @param denied - matcher built from the validated denied-host list.
+ * @returns a disposer restoring the wrapped originals when they are still the guarded ones.
+ */
+function installReportingGuard(denied: (url: URL) => boolean): () => void {
+  const restores: (() => void)[] = []
+  const refusal = (url: URL | undefined): OutboundReportingDeniedError | undefined => refusalOf(denied, url)
+
+  const originalFetch = globalThis.fetch
+  const guardedFetch: typeof fetch = (input, init) => {
+    const error = refusal(requestTarget(input))
+    return error === undefined ? originalFetch(input, init) : Promise.reject(error)
+  }
+  globalThis.fetch = guardedFetch
+  restores.push(() => { if (globalThis.fetch === guardedFetch) globalThis.fetch = originalFetch })
+
+  // node:http and node:https share one wrapper shape over (url[, options][, cb]) and (options[, cb]).
+  // Rejection mirrors each entry point's failure contract: request() throws synchronously for the
+  // options form the same way a bad URL would, and get() surfaces the error via the emitted 'error'
+  // event on a destroyed request so `req.on('error')` callers see exactly the typed refusal.
+  interface HttpModule {
+    request: (...args: never[]) => import('node:http').ClientRequest
+    get: (...args: never[]) => import('node:http').ClientRequest
+  }
+  const wrapNodeHttp = (mod: HttpModule): void => {
+    const originalRequest = mod.request
+    const guardedRequest = (...args: unknown[]): import('node:http').ClientRequest => {
+      const error = refusal(requestTarget(args[0], args[1]))
+      if (error !== undefined) {
+        // Node itself throws synchronously from request()/get() for a target it cannot dial
+        // (bad protocol, bad host), so every overload refuses the same way: before any socket.
+        throw error
+      }
+      return (originalRequest as (...a: unknown[]) => import('node:http').ClientRequest)(...args)
     }
-    return original(input, init)
+    const originalGet = mod.get
+    const guardedGet = (...args: unknown[]): import('node:http').ClientRequest => {
+      const error = refusal(requestTarget(args[0], args[1]))
+      if (error !== undefined) throw error
+      return (originalGet as (...a: unknown[]) => import('node:http').ClientRequest)(...args)
+    }
+    mod.request = guardedRequest
+    mod.get = guardedGet
+    restores.push(() => { mod.request = originalRequest; mod.get = originalGet })
   }
-  globalThis.fetch = guarded
+  // http.get delegates to http.request inside Node, so wrapping both keeps every overload covered
+  // even when one module's get calls the other's request.
+  const nodeHttp = createRequire(import.meta.url)('node:http') as unknown as HttpModule
+  const nodeHttps = createRequire(import.meta.url)('node:https') as unknown as HttpModule
+  wrapNodeHttp(nodeHttp)
+  wrapNodeHttp(nodeHttps)
+
   return () => {
-    if (globalThis.fetch === guarded) globalThis.fetch = original
+    for (const restore of restores.splice(0).reverse()) restore()
   }
+}
+
+/**
+ * Attach the dispatcher-level refusal: `dispatch` is the seam every undici entry point shares —
+ * `undici.request`, `undici.stream`, `undici.connect`, and the WebSocket paths all reach a
+ * dispatcher object before any pool or tunnel exists. Each prototype in that object's chain that
+ * owns a `dispatch` (ProxyAgent's override and the shared DispatcherBase below it) is wrapped, so
+ * a configured proxy cannot tunnel a denied host ahead of the check. Wrapping is per prototype and
+ * idempotent: repeated installs over the same undici copy (or several copies in one process)
+ * refuse to wrap a prototype twice.
+ * @param denied - matcher built from the validated denied-host list.
+ * @param dispatcher - the dispatcher object whose chain should refuse denied origins.
+ * @returns a disposer restoring the original dispatch implementations.
+ */
+function wrapDispatcherChain(denied: (url: URL) => boolean, dispatcher: object): () => void {
+  const restore: (() => void)[] = []
+  let proto: object | null = Object.getPrototypeOf(dispatcher) as object | null
+  while (proto !== null && proto !== Object.prototype) {
+    const undo = wrapDispatchPrototype(denied, proto)
+    if (undo !== undefined) restore.push(undo)
+    proto = Object.getPrototypeOf(proto) as object | null
+  }
+  return () => { for (const undo of restore.reverse()) undo() }
+}
+
+/**
+ * Wrap one prototype's own `dispatch`, once.
+ * @param denied - matcher built from the validated denied-host list.
+ * @param proto - a candidate prototype; wrapped only if it owns `dispatch` and is unwrapped.
+ * @returns the undo, or undefined when the prototype needed no wrap.
+ */
+function wrapDispatchPrototype(denied: (url: URL) => boolean, proto: object): (() => void) | undefined {
+  if (!Object.prototype.hasOwnProperty.call(proto, 'dispatch') || guardedPrototypes.has(proto)) return undefined
+  const holder = proto as { dispatch: (opts: unknown, handler: unknown) => boolean }
+  const original = holder.dispatch
+  holder.dispatch = guardedDispatch(denied, original)
+  guardedPrototypes.add(proto)
+  return () => {
+    holder.dispatch = original
+    guardedPrototypes.delete(proto)
+  }
+}
+
+/** Prototypes already carrying the refusal, so a re-install never double-wraps. */
+const guardedPrototypes = new WeakSet<object>()
+
+/**
+ * Build a dispatch that refuses denied origins before delegating to the original implementation.
+ * @param denied - matcher built from the validated denied-host list.
+ * @param originalDispatch - the implementation to delegate to for allowed origins.
+ * @returns the wrapped dispatch.
+ */
+function guardedDispatch(
+  denied: (url: URL) => boolean,
+  originalDispatch: (this: unknown, opts: unknown, handler: unknown) => boolean,
+): (this: unknown, opts: unknown, handler: unknown) => boolean {
+  return function (this: unknown, opts: unknown, handler: unknown): boolean {
+    const error = refusalOf(denied, requestTarget(undefined, opts))
+    if (error !== undefined) {
+      // Deliver the refusal exactly as undici's own dispatch failures arrive: through the
+      // handler's error channel, asynchronously, and nothing else.
+      const h = handler as { onResponseError?: (err: Error | null, error: Error) => void; onError?: (error: Error) => void } | undefined
+      if (h?.onResponseError !== undefined) {
+        process.nextTick(() => { h.onResponseError?.(null, error) })
+        return false
+      }
+      if (h?.onError !== undefined) {
+        process.nextTick(() => { h.onError?.(error) })
+        return false
+      }
+      throw error
+    }
+    return originalDispatch.call(this, opts, handler)
+  }
+}
+
+/**
+ * Read the comma-separated denied-host list from the launch environment.
+ * @param env - the launch environment the proxy policy also resolves from.
+ * @returns the raw entries, before validation.
+ */
+function deniedHostsFromEnv(env: EnvLookup): string[] {
+  const fromEnv = DENIED_REPORTING_HOSTS_ENV_NAMES
+    .map(name => env.get(name)?.value)
+    .find(value => value !== undefined && value.trim() !== '')
+  return fromEnv === undefined ? [] : fromEnv.split(',').map(entry => entry.trim()).filter(entry => entry !== '')
 }
 
 /**
@@ -352,28 +522,52 @@ function installReportingFetchGuard(): () => void {
  *
  * @param env - the launch environment, whose own layering already prefers real variables over `.env` files.
  * @param report - receives one message per rejected value, in the order the values were considered.
- * @param options - optional dispatcher overrides; `allowH2` unset keeps undici's own default.
- * @returns a disposer restoring the previous dispatcher, policy, and environment.
+ * @param options - optional dispatcher overrides (`allowH2`) and the validated denied-reporting
+ *   host list; absent hosts keep the shipped collector default.
+ * @returns a disposer restoring the previous dispatcher, policy, environment, and guarded entry points.
  */
 export async function installProxyFromEnvironment(
   env: EnvLookup,
   report: (message: string) => void,
-  options: DispatcherOptions = {},
+  options: DispatcherOptions & { readonly deniedReportingHosts?: readonly string[] } = {},
 ): Promise<() => Promise<void>> {
-  const restoreFetch = installReportingFetchGuard()
+  // The list is deployment-varying, so it resolves from the same launch-environment snapshot as the
+  // proxy policy; an explicit caller value wins over the environment. An unparseable entry fails
+  // the install loudly rather than shipping a guard with a silently dropped host.
+  const hosts = options.deniedReportingHosts ?? deniedHostsFromEnv(env)
+  const denied = createReportingDenier(parseDeniedReportingHosts(hosts))
+  const restoreGuard = installReportingGuard(denied)
+  let restoreDispatch = (): void => undefined
   try {
+    {
+      // The dispatcher in place when the guard installs is the one undici.request will use under a
+      // policy that installs nothing, so it is guarded before any request can race past it.
+      const { getGlobalDispatcher, ProxyAgent } = await import('undici')
+      const undoChain = wrapDispatcherChain(denied, getGlobalDispatcher())
+      const undoProxy = wrapDispatchPrototype(denied, ProxyAgent.prototype)
+      restoreDispatch = () => { undoProxy?.(); undoChain() }
+    }
     const { policy, diagnostics } = resolveProxyPolicy(env)
     for (const diagnostic of diagnostics) report(diagnostic.message)
     const restoreProxy = await installGlobalProxy(policy, options)
+    {
+      const { getGlobalDispatcher, ProxyAgent } = await import('undici')
+      const previousDispatch = restoreDispatch
+      const nextDispatch = wrapDispatcherChain(denied, getGlobalDispatcher())
+      const nextProxy = wrapDispatchPrototype(denied, ProxyAgent.prototype)
+      restoreDispatch = () => { nextProxy?.(); nextDispatch(); previousDispatch() }
+    }
     return async () => {
       try {
         await restoreProxy()
       } finally {
-        restoreFetch()
+        restoreDispatch()
+        restoreGuard()
       }
     }
   } catch (error) {
-    restoreFetch()
+    restoreDispatch()
+    restoreGuard()
     throw error
   }
 }
@@ -395,12 +589,20 @@ export async function createRouteDispatcher(
   options: DispatcherOptions = {},
 ): Promise<Dispatcher> {
   const { policy } = resolveProxyPolicy(env)
+  // A direct policy needs no routing factory: hand back the same plain dispatcher an unconfigured
+  // process would use, with the reporting refusal wrapped on its chain below.
   const dispatcher = policy.source === 'none'
     ? await (async () => {
       const { Agent } = await import('undici')
       return new Agent(h2Options(options))
     })()
     : await createPolicyDispatcher(policy, options)
+  // A per-request dispatcher carries the same reporting refusal as the installed one: the deny
+  // list resolves from the same launch environment, and the wrapper rides the dispatcher's life.
+  const denied = createReportingDenier(parseDeniedReportingHosts(deniedHostsFromEnv(env)))
+  const restore = wrapDispatcherChain(denied, dispatcher)
+  const originalClose = dispatcher.close.bind(dispatcher)
+  dispatcher.close = async () => { restore(); await originalClose() }
   return dispatcher
 }
 

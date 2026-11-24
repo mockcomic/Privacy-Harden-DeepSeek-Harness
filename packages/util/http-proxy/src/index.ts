@@ -24,3 +24,10 @@ export {
   type DispatcherOptions,
   type ProxyRoute,
 } from './install.ts'
+export {
+  createReportingDenier,
+  DEFAULT_DENIED_REPORTING_HOSTS,
+  normalizeReportingHost,
+  OutboundReportingDeniedError,
+  parseDeniedReportingHosts,
+} from './policy.ts'

@@ -36,7 +36,7 @@ Official Messages requests no longer send `x-deepseek-harness-user-id`, `x-deeps
 
 Background desktop update polling and the launch-time mandatory-policy check run only when `DSH_DESKTOP_UPDATES=1`.
 
-`installProxyFromEnvironment` rejects `fetch` to `dsh-otel-collector.deepseeksvc.com` before a socket is opened. The error is `Blocked outbound reporting connection to dsh-otel-collector.deepseeksvc.com` and does not include a path, query, header, or body.
+`installProxyFromEnvironment` rejects every outbound connection to a denied reporting host before a socket is opened. The error is `Blocked outbound reporting connection to <host>` and does not include a path, query, header, or body.
 
 ## Retained on purpose
 
@@ -49,6 +49,8 @@ The `User-Agent` product string stays on official Messages requests. It identifi
 DeepSeek account sign-in still sends the platform `device_id` created for that OAuth exchange. Local inference does not use that route. Do not sign in if that exchange is unwanted.
 
 `web_search` still uses the configured search provider when the model calls the tool. The default provider contacts DeepSeek’s search API. It does not run at startup.
+
+Feedback and crash logs stay local, but they record absolute paths and the git remotes of the repositories in play. A user who files them elsewhere shares that context by choice.
 
 Historical `session-log-deepseek/delivery-accepted` events remain readable. New requests do not append them.
 
@@ -64,17 +66,23 @@ User-invoked `web_fetch`, web search, MCP, plugin install, git, and shell comman
 
 ## Network controls and limits
 
-The fetch guard runs for every profile because `runProfile` installs the proxy policy before plugins mount. It covers `globalThis.fetch` only.
+The reporting guard runs for every profile because `runProfile` installs the proxy policy before plugins mount. It covers every outbound entry point the shipped process can reach: `globalThis.fetch`, `http.request` / `http.get` / `https.request` / `https.get` (all overloads, refusing synchronously before a socket opens), and the undici dispatcher seam — `DispatcherBase.dispatch` and `ProxyAgent.dispatch` are wrapped, so `undici.request`, `undici.stream`, `undici.connect`, and the WebSocket paths hit the same check even when a configured proxy would tunnel the host.
 
-It does not cover `node:http`, `node:https`, undici calls that bypass `fetch`, Electron’s updater, or subprocesses. Shell, git, package managers, and MCP child processes keep the existing scrubbed environment. Blocking those requires an OS firewall, a container egress policy, or a similar control outside the process.
+The denied list is a validated Config value, not a constant. `DSH_DENIED_REPORTING_HOSTS` carries a comma-separated list of bare hostnames (no scheme, path, port, or credentials; case-insensitive; one trailing dot tolerated). A malformed entry fails the install. An unset or empty value keeps the shipped default, `dsh-otel-collector.deepseeksvc.com`, so behavior is unchanged unless configured. Setting it replaces the default list rather than extending it.
 
-The guard does not log API keys, authorization headers, or request bodies. A blocked error names only the collector host.
+It does not cover Electron's updater or subprocesses. Shell, git, package managers, and MCP child processes keep the existing scrubbed environment. Blocking those requires an OS firewall, a container egress policy, or a similar control outside the process.
+
+The guard does not log API keys, authorization headers, or request bodies. A blocked error names only the refused host.
 
 Loopback, private LAN, and Tailscale addresses are allowed unless a future change adds them to the deny list. Do not add them.
 
 ## Dependencies that can still communicate
 
-`electron-updater` can contact the feed in `app-update.yml` when a person starts an update check or when `DSH_DESKTOP_UPDATES=1` enables background checks.
+`electron-updater` can contact the feed in `app-update.yml` when a person starts an update check or when `DSH_DESKTOP_UPDATES=1` enables background checks. The packaged feed is upstream's `https://download.deepseek.com`. `DSH_DESKTOP_UPDATE_FEED_URL` points the updater feed at a mirror, `DSH_DESKTOP_UPDATE_POLICY_ORIGIN` points the mandatory-policy origin at a mirror (both validated as HTTPS origins without credentials, path, query, or fragment), and `DSH_DESKTOP_UPDATE_FEED=disabled` makes a manual check report "disabled" instead of contacting either.
+
+Connector plugins that register upstream skills (`upstreamSkills`) download guide archives from `skillsUrls` at plugin load, which defaults to `https://codeload.github.com` (the wecom and tencent-meeting connectors are the shipped users). `skillsUrls` is a Config array: point it at a mirror, or at an unreachable localhost port, to opt out of that fetch entirely.
+
+The opt-in plugin market bundle (`packages/boot/plugin-market`) fetches plugin indexes and detail files from `raw.githubusercontent.com` and configured GitLab origins, and falls back to anonymous git smart-HTTP clones when a file API has no answer. No index source is configured by default, so a default boot contacts neither; installing plugins from the market is a deliberate action like selecting an npm registry.
 
 The DeepSeek account and official model clients contact the configured origins when those features are used. Defaults remain `https://api.deepseek.com` and `https://platform.deepseek.com`.
 
@@ -88,11 +96,13 @@ Boot a profile against a mock or local OpenAI-compatible server and inspect the 
 
 Confirm `$DSH_HOME/.anonymous-user-id` is not created by that run. An older file may already exist and is not read.
 
-`fetch('https://dsh-otel-collector.deepseeksvc.com/v1/logs')` after profile startup must reject with the blocked-host error and must not open a connection.
+`fetch('https://dsh-otel-collector.deepseeksvc.com/v1/logs')` after profile startup must reject with the blocked-host error and must not open a connection. The same refusal now applies to `http.request` / `http.get`, `https.request` / `https.get`, and the undici dispatcher seam (`undici.request`, `undici.stream`, `undici.connect`, WebSocket). The refused list is configurable through `DSH_DENIED_REPORTING_HOSTS`; see "Network controls and limits".
+
+The boot check is automated: `apps/cli/tests/zero-egress-boot.spec.ts` boots the shipped headless profile keyless against a loopback mock model, with `HTTP_PROXY`/`HTTPS_PROXY` pointed at a recording CONNECT proxy, and asserts the set of hosts contacted during boot plus one no-op turn equals the declared allowlist (empty by default). A new startup egress path fails the test loudly; add an entry to `BOOT_EGRESS_ALLOWLIST` only with a comment naming the connection and its data. Run it under `pnpm run test`; it needs no credentials and no network.
 
 Unit coverage for these refusals lives next to the changed packages, including `packages/util/http-proxy/tests/install.spec.ts`, `packages/session/session-log-deepseek/tests/upload.spec.ts`, and `packages/llm/plugin-package-inventory-deepseek/tests/inventory.spec.ts`.
 
-Passing those tests does not prove that a subprocess made no connection. Watch the process with an OS-level capture if that proof is required.
+Neither the boot test nor the unit tests prove that a subprocess made no connection. Shell, git, package managers, and MCP child processes keep the existing scrubbed-environment story; that proof still requires an OS-level capture or firewall.
 
 ## Tradeoffs
 

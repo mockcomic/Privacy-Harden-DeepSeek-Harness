@@ -6,6 +6,7 @@ import { getGlobalDispatcher } from 'undici'
 import {
   clearedProxyEnv,
   installProxyFromEnvironment,
+  OutboundReportingDeniedError,
   proxyEnvironmentForChild,
   proxyRouteFor,
 } from '../src/index.ts'
@@ -43,6 +44,9 @@ beforeAll(async () => {
   })
   proxy.on('connect', (request, socket) => {
     proxied.push(`CONNECT ${request.url ?? ''}`)
+    // Answer the tunnel handshake so dispatcher-level clients (undici.request) see a real
+    // established tunnel, then close: fetch treats the closed tunnel as a transport error.
+    socket.write('HTTP/1.1 200 Connection established\r\n\r\n')
     socket.end()
   })
   origin = createServer((_request, response) => { response.end('DIRECT') })
@@ -465,6 +469,118 @@ describe('reporting collector denial', () => {
       } finally {
         await dispose()
       }
+    })
+  })
+
+  it('refuses node:http and node:https before a socket opens, over every overload', async () => {
+    await withCleanProxyEnv(async () => {
+      const { dispose } = await install(env({}))
+      try {
+        const refused = 'Blocked outbound reporting connection to dsh-otel-collector.deepseeksvc.com'
+        // Read the CJS exports the guard mutated: vitest's cached namespace for a statically
+        // imported builtin would show the pre-install function.
+        const { createRequire } = await import('node:module')
+        const require = createRequire(import.meta.url)
+        const https = require('node:https') as typeof import('node:https')
+        const http = require('node:http') as typeof import('node:http')
+        // String/URL overloads refuse synchronously.
+        expect(() => https.request('https://dsh-otel-collector.deepseeksvc.com/v1/logs')).toThrow(refused)
+        expect(() => https.request(new URL('https://dsh-otel-collector.deepseeksvc.com/v1/logs'))).toThrow(refused)
+        expect(() => http.request('http://dsh-otel-collector.deepseeksvc.com/v1/logs')).toThrow(refused)
+        // The options overload (protocol/host/path record) refuses synchronously too, with the typed error.
+        let typed: unknown
+        try {
+          https.request({ protocol: 'https:', host: 'dsh-otel-collector.deepseeksvc.com', path: '/v1/logs?token=secret' })
+        } catch (error) {
+          typed = error
+        }
+        expect(typed).toBeInstanceOf(OutboundReportingDeniedError)
+        expect((typed as Error).message).toBe(refused)
+        // get(url) propagates the same synchronous refusal as request(url).
+        expect(() => https.get('https://dsh-otel-collector.deepseeksvc.com/v1/logs')).toThrow(refused)
+        // A non-denied host still reaches its destination.
+        await new Promise<void>((resolve, reject) => {
+          const req = http.get(originUrl, (response) => {
+            const chunks: Buffer[] = []
+            response.on('data', (chunk: Buffer) => { chunks.push(chunk) })
+            response.on('end', () => {
+              expect(Buffer.concat(chunks).toString()).toBe('DIRECT')
+              resolve()
+            })
+          })
+          req.on('error', reject)
+        })
+      } finally {
+        await dispose()
+      }
+    })
+  })
+
+  it('refuses the denied origin at the undici dispatcher seam for both direct and proxied policies', async () => {
+    await withCleanProxyEnv(async () => {
+      const { dispose } = await install(env({}))
+      try {
+        const undici = await import('undici')
+        await expect(undici.request('https://dsh-otel-collector.deepseeksvc.com/v1/logs')).rejects.toThrow(
+          'Blocked outbound reporting connection to dsh-otel-collector.deepseeksvc.com',
+        )
+        await expect(undici.request(originUrl)).resolves.toMatchObject({ statusCode: 200 })
+      } finally {
+        await dispose()
+      }
+    })
+    await withCleanProxyEnv(async () => {
+      // The same refusal applies when a configured proxy would otherwise tunnel the denied host.
+      const { dispose } = await install(proxyAll())
+      try {
+        const undici = await import('undici')
+        await expect(undici.request('https://dsh-otel-collector.deepseeksvc.com/v1/logs')).rejects.toThrow(
+          'Blocked outbound reporting connection to dsh-otel-collector.deepseeksvc.com',
+        )
+        expect(proxied).toEqual([])
+        await expect((await fetch(proxyTarget)).text()).resolves.toBe('VIA-PROXY')
+      } finally {
+        await dispose()
+      }
+    })
+  })
+
+  it('blocks every host of a configured deny list and nothing else', async () => {
+    await withCleanProxyEnv(async () => {
+      const dispose = await installProxyFromEnvironment(env({}), () => undefined, {
+        deniedReportingHosts: ['Collector.Example.', 'telemetry.other.test'],
+      })
+      try {
+        await expect(fetch('https://collector.example/v1/logs')).rejects.toThrow(
+          'Blocked outbound reporting connection to collector.example',
+        )
+        await expect(fetch('https://telemetry.other.test/v1/logs')).rejects.toThrow(
+          'Blocked outbound reporting connection to telemetry.other.test',
+        )
+        // Replacing the list drops the shipped default: the collector host no longer hits the guard.
+        const passed = await fetch('https://dsh-otel-collector.deepseeksvc.com/v1/logs').then(() => 'resolved').catch((error: unknown) => String(error))
+        expect(passed).not.toContain('Blocked outbound reporting')
+        await expect((await fetch(originUrl)).text()).resolves.toBe('DIRECT')
+      } finally {
+        await dispose()
+      }
+    })
+  })
+
+  it('resolves the deny list from DSH_DENIED_REPORTING_HOSTS and fails loud on a malformed entry', async () => {
+    await withCleanProxyEnv(async () => {
+      const { dispose } = await install(env({ DSH_DENIED_REPORTING_HOSTS: 'a.test.,b.TEST' }))
+      try {
+        await expect(fetch('https://a.test/v1/logs')).rejects.toThrow('Blocked outbound reporting connection to a.test')
+        await expect(fetch('https://b.test/v1/logs')).rejects.toThrow('Blocked outbound reporting connection to b.test')
+      } finally {
+        await dispose()
+      }
+    })
+    await withCleanProxyEnv(async () => {
+      await expect(installProxyFromEnvironment(env({ DSH_DENIED_REPORTING_HOSTS: 'https://bad.test/path' }), () => undefined)).rejects.toThrow(
+        'reporting guard: "https://bad.test/path" is not a bare hostname',
+      )
     })
   })
 })

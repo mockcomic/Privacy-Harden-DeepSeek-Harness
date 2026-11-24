@@ -53,7 +53,7 @@ import { WELCOME_IPC, needsWelcome, type WelcomeNotice } from './welcome-api.ts'
 import { connectDesktopWelcome, type DesktopWelcomeBackend } from './welcome-backend.ts'
 import { DesktopUpdateJournal } from './update-journal.ts'
 import { DesktopUpdatePreparationError } from './update-error.ts'
-import { DesktopUpdateSchedule, desktopBackgroundUpdatesEnabled, resolveDesktopUpdateScheduleConfig } from './update-schedule.ts'
+import { DesktopUpdateSchedule, desktopBackgroundUpdatesEnabled, resolveDesktopUpdateFeedConfig, resolveDesktopUpdateScheduleConfig } from './update-schedule.ts'
 import { desktopUpdateErrorSummary, presentDesktopUpdate } from './update-presentation.ts'
 import { desktopErrorState } from './startup-error.ts'
 import { readDesktopLoginShellEnvironment, resolveDesktopLoginShellConfig } from './login-shell-environment.ts'
@@ -1015,6 +1015,10 @@ async function main(): Promise<void> {
     if (channelState?.error !== undefined) {
       return showConfigurationError()
     }
+    if (manual && !feedConfig.manualChecksEnabled) {
+      return ordinaryMessageBox({ type: 'info', title: locale.messages.updateCheckTitle,
+        message: locale.messages.updateFeedDisabled, buttons: [locale.messages.updateClose], cancelId: 0 }).then(() => undefined)
+    }
     if (authenticationOperation !== undefined) {
       policyAuth?.focus(); updateDialog.focus()
     }
@@ -1563,7 +1567,21 @@ async function main(): Promise<void> {
   const policyInput: unknown = app.isPackaged
     ? ('dshMandatoryUpdatePolicy' in manifest ? manifest.dshMandatoryUpdatePolicy : undefined)
     : developmentPolicy === undefined ? undefined : JSON.parse(developmentPolicy) as unknown
-  const policyConfig = resolveDesktopPolicyConfig(policyInput, !app.isPackaged)
+  const feedConfig = resolveDesktopUpdateFeedConfig(process.env)
+  // A mirror's policy answers at a different origin than the packaged manifest names.
+  const policyConfigRaw = resolveDesktopPolicyConfig(policyInput, !app.isPackaged)
+  const policyConfig = feedConfig.policyOrigin === undefined || policyConfigRaw === undefined
+    ? policyConfigRaw
+    : {
+      ...policyConfigRaw,
+      origin: feedConfig.policyOrigin,
+      allowedPageOrigins: policyConfigRaw.allowedPageOrigins.includes(feedConfig.policyOrigin)
+        ? policyConfigRaw.allowedPageOrigins
+        : [...policyConfigRaw.allowedPageOrigins, feedConfig.policyOrigin],
+    }
+  // Manual checks honor the disable switch; the feed override applies to automatic checks too,
+  // so a self-hosted build updates from its own mirror rather than upstream's coordinates.
+  if (feedConfig.feedUrl !== undefined) updates.useFeedUrl(feedConfig.feedUrl)
   if (policyConfig !== undefined) {
     if (policyConfig.authentication === 'feishu-test') {
       policyAuth = new DesktopPolicyTestAuth(policyConfig.origin, policyConfig.allowedAuthOrigins, locale,

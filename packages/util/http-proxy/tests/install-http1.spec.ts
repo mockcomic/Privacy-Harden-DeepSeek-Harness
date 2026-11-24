@@ -26,10 +26,14 @@ vi.mock('undici', () => {
     }
   }
   const dispatcher = new StubDispatcher()
+  class DispatcherBase {
+    dispatch(): boolean { return false }
+  }
   return {
     Agent,
     Pool,
     ProxyAgent,
+    Dispatcher: DispatcherBase,
     getGlobalDispatcher: () => dispatcher,
     setGlobalDispatcher: () => undefined,
   }
@@ -124,6 +128,7 @@ describe('HTTP/2 is opt-out, not the default', () => {
   it('keeps undici\'s HTTP/2 default for a direct per-request dispatcher', async () => {
     const dispatcher = await createRouteDispatcher(env({}))
     try {
+      // A per-request route dispatcher carries no transport overrides: undici's own HTTP/2 default.
       expect(lastOf('Agent')?.options).toEqual({})
     } finally {
       await dispatcher.close()

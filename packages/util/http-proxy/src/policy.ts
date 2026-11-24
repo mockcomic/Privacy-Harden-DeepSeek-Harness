@@ -43,6 +43,13 @@ export const POLICY_ENV_NAMES = {
 } as const
 
 /**
+ * Environment names carrying the denied-reporting host list, comma-separated bare hostnames.
+ * Deployment-varying like the proxy policy itself, so it arrives through the launch environment
+ * and never as a per-process constant. Absent means {@link DEFAULT_DENIED_REPORTING_HOSTS}.
+ */
+export const DENIED_REPORTING_HOSTS_ENV_NAMES = ['DSH_DENIED_REPORTING_HOSTS'] as const
+
+/**
  * Every environment name that carries proxy configuration, including the `ALL_PROXY` fallback this
  * package resolves but never writes back. A caller that must isolate a child from the machine's
  * network policy clears exactly these.
@@ -78,16 +85,47 @@ export interface ProxyPolicy {
 /** A policy that proxies nothing. Callers that have not installed a policy resolve URLs against this. */
 export const DIRECT_POLICY: ProxyPolicy = { noProxy: '', source: 'none' }
 
-/** Collector host that must not receive harness reporting traffic. */
-export const DENIED_REPORTING_HOST = 'dsh-otel-collector.deepseeksvc.com'
+/** The collector host that ships denied when no deployment names a list. */
+export const DEFAULT_DENIED_REPORTING_HOSTS: readonly string[] = ['dsh-otel-collector.deepseeksvc.com']
 
 /**
- * Whether a request URL is the denied reporting collector.
- * @param url - the outbound request URL. Only the hostname is considered.
- * @returns true when the host is the reporting collector.
+ * Normalize one denied-reporting host: lowercase, trailing dot tolerated and removed.
+ * @param value - a bare hostname, e.g. `Collector.Example.`.
+ * @returns the comparison form, or `undefined` when `value` is not a usable bare hostname.
  */
-export function deniedReportingHost(url: URL): boolean {
-  return url.hostname.replace(/\.$/, '').toLowerCase() === DENIED_REPORTING_HOST
+export function normalizeReportingHost(value: string): string | undefined {
+  const host = value.trim().toLowerCase()
+  const bare = host.endsWith('.') ? host.slice(0, -1) : host
+  if (bare.length === 0 || /[/?#@:\s]/.test(bare)) return undefined
+  return bare
+}
+
+/**
+ * Validate a deployment's denied-reporting host list.
+ * @param values - bare hostnames; each must carry no scheme, path, query, port, or credentials.
+ * @returns the normalized, de-duplicated list in first-seen order, or the default when empty.
+ * @throws when any entry is not a usable bare hostname.
+ */
+export function parseDeniedReportingHosts(values: readonly string[]): readonly string[] {
+  const seen: string[] = []
+  for (const value of values) {
+    const host = normalizeReportingHost(value)
+    if (host === undefined) {
+      throw new Error(`reporting guard: "${value}" is not a bare hostname (no scheme, path, query, port, or credentials)`)
+    }
+    if (!seen.includes(host)) seen.push(host)
+  }
+  return seen.length === 0 ? DEFAULT_DENIED_REPORTING_HOSTS : seen
+}
+
+/**
+ * Build the guard's matcher for one validated host list.
+ * @param hosts - normalized hosts, as returned by {@link parseDeniedReportingHosts}.
+ * @returns a predicate deciding each outbound URL by hostname alone.
+ */
+export function createReportingDenier(hosts: readonly string[]): (url: URL) => boolean {
+  const denied = new Set(hosts)
+  return url => denied.has(normalizeReportingHost(url.hostname) ?? url.hostname)
 }
 
 /**
