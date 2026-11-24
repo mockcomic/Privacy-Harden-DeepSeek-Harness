@@ -37,6 +37,8 @@ export interface Config {
   skillsUrls: string[]
   /** How long one prefix may take to deliver the whole archive before the next one is tried. */
   skillsTimeoutMs: number
+  /** Whether the fork may download upstream guide archives at plugin load; the codeload fetch is opt-in. */
+  skillsDownloadEnabled: boolean
 }
 
 /** Accept a download prefix that parses as an HTTPS URL without credentials, a query, or a fragment. */
@@ -51,10 +53,11 @@ function skillsUrl(value: string): string {
 export default class UpstreamSkills extends Service {
   static inject = ['skills']
 
-  /** `skillsUrls` defaults to GitHub's archive host. */
+  /** `skillsUrls` defaults to GitHub's archive host; downloads themselves are opt-in. */
   static Config: z<Partial<Config>, Config> = z.object({
     skillsUrls: z.array(z.transform(z.string(), skillsUrl)).min(1).default(['https://codeload.github.com']),
     skillsTimeoutMs: z.natural().min(1).max(MAX_TIMER_DELAY_MS).default(120_000),
+    skillsDownloadEnabled: z.boolean().default(false),
   })
 
   constructor(ctx: Context, private readonly config: Config) {
@@ -170,6 +173,12 @@ class UpstreamSkillProvider implements SkillProvider {
   retry(): void {
     const { signal } = this.control
     if (this.state !== 'failed' || this.options.skillsDir !== undefined || signal.aborted) return
+    // The privacy fork never downloads without an explicit opt-in: the plugin-load fetch to the
+    // archive host is a user-visible egress choice, stated once instead of retried silently.
+    if (!this.config.skillsDownloadEnabled) {
+      this.logger.warn(`${this.name}: upstream skills downloads are disabled; set the upstreamSkills skillsDownloadEnabled config to true to allow them`)
+      return
+    }
     this.running = true
     this.notify()
     void this.install(signal).then(

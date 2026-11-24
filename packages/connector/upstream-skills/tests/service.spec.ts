@@ -98,8 +98,11 @@ const published = () => join(cache(), CURRENT)
 const warning = (message: unknown, error: unknown) => ({ message, error })
 const logged = () => ctx.logger.buffer.filter(entry => entry.type === 'warn').map(entry => warning(entry.args[0], entry.args[1]))
 const warnings = (): unknown[] => logged().map(({ message }) => message)
-/** Load the Service; `BASE` is its only source unless a test names others. */
-const load = (config: Partial<Config> = {}) => ctx.plugin(UpstreamSkills, { skillsUrls: [BASE], skillsTimeoutMs: 10_000, ...config })
+/** Load the Service; `BASE` is its only source unless a test names others. Downloads are on so
+ * the suite exercises the fetch path; the shipped default is off, covered in its own cases. */
+const load = (config: Partial<Config> = {}) => ctx.plugin(UpstreamSkills, {
+  skillsUrls: [BASE], skillsTimeoutMs: 10_000, skillsDownloadEnabled: true, ...config,
+})
 let service: Awaited<ReturnType<typeof load>>
 /** Load the Service again with other sources. */
 async function sources(config: Partial<Config>): Promise<void> {
@@ -136,9 +139,9 @@ const listed = (directory: string) => [{
 
 describe('Config', () => {
   it('defaults to GitHub with a two-minute limit and accepts only HTTPS URL prefixes without a query, fragment, or credentials', () => {
-    expect(UpstreamSkills.Config({})).toEqual({ skillsUrls: ['https://codeload.github.com'], skillsTimeoutMs: 120_000 })
-    expect(UpstreamSkills.Config({ skillsUrls: ['https://mirror.example/github'], skillsTimeoutMs: 1 }))
-      .toEqual({ skillsUrls: ['https://mirror.example/github'], skillsTimeoutMs: 1 })
+    expect(UpstreamSkills.Config({})).toEqual({ skillsUrls: ['https://codeload.github.com'], skillsTimeoutMs: 120_000, skillsDownloadEnabled: false })
+    expect(UpstreamSkills.Config({ skillsUrls: ['https://mirror.example/github'], skillsTimeoutMs: 1, skillsDownloadEnabled: true }))
+      .toEqual({ skillsUrls: ['https://mirror.example/github'], skillsTimeoutMs: 1, skillsDownloadEnabled: true })
     for (const url of [
       'http://codeload.github.com', 'https://mirror.example/?a=1', 'https://mirror.example/#a', 'https://user@mirror.example',
       'https://mirror.example:bad', 'https://[', 'https://:',
@@ -479,5 +482,23 @@ describe('register in a profile', () => {
     expect(await ctx.skills.list()).toEqual(listed(configured))
     expect(await entries(pins())).toEqual([EARLIER, CURRENT].toSorted())
     expect(host.requests).toEqual([])
+  })
+})
+
+describe('skillsDownloadEnabled', () => {
+  it('downloads nothing by default: the fork gates archive fetches behind the switch', async () => {
+    await sources({ skillsDownloadEnabled: false })
+    const skills = register()
+    expect(await settled(skills)).toBe('failed')
+    expect(host.requests).toEqual([])
+    expect(warnings().some(message => String(message).includes('upstream skills downloads are disabled'))).toBe(true)
+  })
+
+  it('fetches the archive once the download is enabled', async () => {
+    // beforeEach loads the Service with the suite's skillsDownloadEnabled: true override.
+    host.routes[archivePath(set)] = serve(repository())
+    const skills = register()
+    expect(await settled(skills)).toBe('installed')
+    expect(host.requests.length).toBe(1)
   })
 })
