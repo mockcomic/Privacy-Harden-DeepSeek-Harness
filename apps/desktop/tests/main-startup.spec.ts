@@ -489,6 +489,8 @@ beforeEach(() => {
   vi.stubEnv('DSH_DESKTOP_DEV_PROJECT_DIR', undefined)
   vi.stubEnv('DSH_DESKTOP_MANDATORY_UPDATE_CONFIG', undefined)
   vi.stubEnv('DSH_DESKTOP_UPDATE_JOURNAL_DIR', undefined)
+  // The fork disables manual feed checks by default; this suite exercises the enabled update flow.
+  vi.stubEnv('DSH_DESKTOP_UPDATE_FEED', 'enabled')
   vi.stubEnv('DSH_CLIENT_VERSION', '1.2.3')
   harness.analyticsEnabled = true
 })

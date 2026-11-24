@@ -42,9 +42,12 @@ function httpsOverrideOrigin(value: string, name: string): string {
 
 /**
  * Resolve feed-override environment without changing automatic behavior.
- * `DSH_DESKTOP_UPDATE_FEED_URL` replaces the packaged updater feed, `DSH_DESKTOP_UPDATE_POLICY_ORIGIN`
- * replaces the packaged policy origin, and `DSH_DESKTOP_UPDATE_FEED=disabled` makes a manual check
- * report that feed checks are disabled instead of contacting either.
+ * The privacy fork does not contact upstream's update feed unless the person opts in: manual
+ * checks are OFF unless `DSH_DESKTOP_UPDATE_FEED=enabled`, and a disabled check reports that feed
+ * checks are disabled instead of contacting the feed. Automatic behavior stays behind
+ * `DSH_DESKTOP_UPDATES=1`, unchanged. `DSH_DESKTOP_UPDATE_FEED_URL` replaces the packaged updater
+ * feed and `DSH_DESKTOP_UPDATE_POLICY_ORIGIN` replaces the packaged policy origin, so a self-hosted
+ * build can update from its own mirror.
  * @param env - Desktop process environment.
  * @returns Validated feed overrides.
  */
@@ -52,13 +55,13 @@ export function resolveDesktopUpdateFeedConfig(env: NodeJS.ProcessEnv): DesktopU
   const feedValue = env.DSH_DESKTOP_UPDATE_FEED_URL?.trim()
   const policyValue = env.DSH_DESKTOP_UPDATE_POLICY_ORIGIN?.trim()
   const mode = env.DSH_DESKTOP_UPDATE_FEED?.trim()
-  if (mode !== undefined && mode !== '' && mode !== 'disabled') {
-    throw new Error('desktop update: DSH_DESKTOP_UPDATE_FEED must be unset or exactly "disabled"')
+  if (mode !== undefined && mode !== '' && mode !== 'disabled' && mode !== 'enabled') {
+    throw new Error('desktop update: DSH_DESKTOP_UPDATE_FEED must be unset, "disabled", or "enabled"')
   }
   return {
     feedUrl: feedValue === undefined || feedValue === '' ? undefined : httpsOverrideOrigin(feedValue, 'DSH_DESKTOP_UPDATE_FEED_URL'),
     policyOrigin: policyValue === undefined || policyValue === '' ? undefined : httpsOverrideOrigin(policyValue, 'DSH_DESKTOP_UPDATE_POLICY_ORIGIN'),
-    manualChecksEnabled: mode !== 'disabled',
+    manualChecksEnabled: mode === 'enabled',
   }
 }
 
